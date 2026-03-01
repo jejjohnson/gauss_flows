@@ -9,6 +9,10 @@ Always ensure all of the following pass before committing:
 3. **Format** — `uv run ruff format gauss_flows/ tests/`
 4. **Lint** — `uv run ruff check gauss_flows/ tests/`
 
+## PR Title and Description
+
+Keep the original PR title and description intact across sessions. When new work is done, **incrementally add** to the existing PR description rather than replacing it. Never overwrite the original intent of the PR with a new title or description.
+
 ## Commit and PR Naming
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) for all commit messages and PR titles:
