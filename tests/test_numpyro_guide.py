@@ -1,16 +1,13 @@
 """Tests for the FlowGuide NumPyro variational guide."""
 
 import jax.numpy as jnp
-import jax.random as jr
 import numpyro
 import numpyro.distributions as dist
-import pytest
 from numpyro.infer import SVI, Trace_ELBO
 from numpyro.optim import Adam
 
 import gauss_flows
 from gauss_flows import FlowGuide
-
 
 # ---------------------------------------------------------------------------
 # Helpers / simple models
@@ -92,7 +89,9 @@ def test_flow_guide_svi_runs(key):
 def test_flow_guide_svi_multidim(key):
     """SVI with FlowGuide works for a multi-dimensional latent space."""
     obs = jnp.zeros(3)
-    guide = FlowGuide(multivariate_model, flow_kwargs={"n_layers": 2, "n_components": 4})
+    guide = FlowGuide(
+        multivariate_model, flow_kwargs={"n_layers": 2, "n_components": 4}
+    )
     svi = SVI(multivariate_model, guide, Adam(1e-3), loss=Trace_ELBO())
     result = svi.run(key, num_steps=5, obs=obs, progress_bar=False)
     assert result.losses.shape == (5,)
@@ -146,7 +145,9 @@ def test_flow_guide_sample_posterior_shape(key, key2):
 def test_flow_guide_sample_posterior_multidim(key, key2):
     """sample_posterior returns correctly shaped samples for vector latents."""
     obs = jnp.zeros(3)
-    guide = FlowGuide(multivariate_model, flow_kwargs={"n_layers": 2, "n_components": 4})
+    guide = FlowGuide(
+        multivariate_model, flow_kwargs={"n_layers": 2, "n_components": 4}
+    )
     svi = SVI(multivariate_model, guide, Adam(1e-3), loss=Trace_ELBO())
     result = svi.run(key, num_steps=5, obs=obs, progress_bar=False)
 

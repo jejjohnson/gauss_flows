@@ -5,7 +5,6 @@ as the approximate posterior for Stochastic Variational Inference (SVI).
 """
 
 import jax.random as jr
-import numpyro
 from flowjax.experimental.numpyro import register_params
 from numpyro.infer.autoguide import AutoContinuous
 from numpyro.infer.initialization import init_to_uniform
