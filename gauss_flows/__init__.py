@@ -16,6 +16,7 @@ from gauss_flows._src.info_theory import (
     total_correlation,
 )
 from gauss_flows._src.numpyro_compat import FlowDist
+from gauss_flows._src.numpyro_guide import FlowGuide
 from gauss_flows._src.train import fit_gaussianization_flow
 from gauss_flows._src.transforms import (
     ActNorm,
@@ -42,6 +43,7 @@ __all__ = [
     "DeepSigmoidCoupling",
     "FixedRotation",
     "FlowDist",
+    "FlowGuide",
     "HaarWavelet",
     "HouseholderRotation",
     "InverseGaussCDF",

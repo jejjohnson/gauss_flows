@@ -7,6 +7,7 @@ with the NumPyro distribution interface for use in probabilistic programs.
 from typing import ClassVar
 
 import numpyro.distributions as dist_lib
+import numpyro.distributions.constraints as constraints
 from flowjax.distributions import Transformed
 from jax import Array
 from jaxtyping import PRNGKeyArray
@@ -35,6 +36,7 @@ class FlowDist(dist_lib.Distribution):
     """
 
     arg_constraints: ClassVar[dict] = {}
+    support = constraints.real_vector
 
     def __init__(self, flow: Transformed):
         self.flow = flow
