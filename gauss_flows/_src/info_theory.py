@@ -125,9 +125,7 @@ def kl_divergence(
     return jnp.mean(log_p - log_q)
 
 
-def negentropy(
-    dist: AbstractDistribution, n_samples: int = 10000, *, key
-) -> Array:
+def negentropy(dist: AbstractDistribution, n_samples: int = 10000, *, key) -> Array:
     """Estimate the negentropy of a distribution.
 
     Negentropy is defined as:

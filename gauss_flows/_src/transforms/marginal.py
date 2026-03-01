@@ -82,7 +82,9 @@ class MixtureGaussianCDF(AbstractBijection):
         # Invert GMM CDF: find x such that GMM_CDF(x) = u
         def _cdf_i(u_i, means_i, scales_i, weights_i):
             def _fn(xi):
-                return self._gmm_cdf(xi[None], means_i[None], scales_i[None], weights_i[None])[0]
+                return self._gmm_cdf(
+                    xi[None], means_i[None], scales_i[None], weights_i[None]
+                )[0]
 
             return bisection_inverse(_fn, u_i)
 
@@ -120,12 +122,16 @@ class MixtureLogisticCDF(AbstractBijection):
         self.log_scales = jnp.zeros((n_dims, n_components))
         self.log_weights = jnp.zeros((n_dims, n_components))
 
-    def _mixture_cdf(self, x: Array, means: Array, scales: Array, weights: Array) -> Array:
+    def _mixture_cdf(
+        self, x: Array, means: Array, scales: Array, weights: Array
+    ) -> Array:
         """CDF of a 1D logistic mixture evaluated at x."""
         cdfs = jax.scipy.special.expit((x[:, None] - means) / scales)
         return jnp.sum(weights * cdfs, axis=-1)
 
-    def _mixture_logpdf(self, x: Array, means: Array, scales: Array, weights: Array) -> Array:
+    def _mixture_logpdf(
+        self, x: Array, means: Array, scales: Array, weights: Array
+    ) -> Array:
         """Log PDF of a 1D logistic mixture evaluated at x."""
         z = (x[:, None] - means) / scales
         log_pdfs = -jnp.log(scales) + jax.nn.log_sigmoid(z) + jax.nn.log_sigmoid(-z)
@@ -154,7 +160,9 @@ class MixtureLogisticCDF(AbstractBijection):
 
         def _cdf_i(u_i, means_i, scales_i, weights_i):
             def _fn(xi):
-                return self._mixture_cdf(xi[None], means_i[None], scales_i[None], weights_i[None])[0]
+                return self._mixture_cdf(
+                    xi[None], means_i[None], scales_i[None], weights_i[None]
+                )[0]
 
             return bisection_inverse(_fn, u_i)
 
