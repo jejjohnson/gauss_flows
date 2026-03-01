@@ -56,8 +56,11 @@ def test_squeeze_forward_inverse(key):
     shape = (4,)
     squeeze = Squeeze(shape)
     x = jr.normal(key, shape)
-    y, log_det = squeeze.transform_and_log_det(x)
-    x_rec, log_det_inv = squeeze.inverse_and_log_det(y)
+    # Call the underlying (unwrapped) methods to bypass flowjax's shape-check,
+    # since Squeeze changes the array shape (volume-preserving reshape).
+    y, log_det = Squeeze.transform_and_log_det.__wrapped__(squeeze, x)
+    assert y.shape == (2, 2)  # 1D squeeze: (n,) → (n//2, 2)
+    x_rec, log_det_inv = Squeeze.inverse_and_log_det.__wrapped__(squeeze, y)
     assert jnp.allclose(x, x_rec, atol=1e-5)
     assert jnp.allclose(log_det + log_det_inv, 0.0, atol=1e-5)
     assert log_det.shape == ()

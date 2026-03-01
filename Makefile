@@ -76,7 +76,7 @@ check: lint test ## Run all checks (lint + test)
 .PHONY: build
 build: ## Build the package
 	@printf "$(YELLOW)>>> Building package...$(RESET)\n"
-	@uv run python -m build
+	@uv build
 	@printf "$(GREEN)>>> Package built successfully.$(RESET)\n"
 
 .PHONY: clean

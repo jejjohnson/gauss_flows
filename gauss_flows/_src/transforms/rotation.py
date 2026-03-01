@@ -89,7 +89,8 @@ class OrthogonalRotation(AbstractBijection):
         A = A - A.T  # make skew-symmetric
         eye = jnp.eye(n_dims)
         # Cayley map: Q = (I - A)(I + A)^{-1}
-        Q = jnp.linalg.solve(eye + A, eye - A).T
+        # Equivalent to: Q = solve(I + A, I - A)^T with A^T = -A gives (I-A)(I+A)^{-1}
+        Q = jnp.linalg.solve(eye - A, eye + A).T
         return Q
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):

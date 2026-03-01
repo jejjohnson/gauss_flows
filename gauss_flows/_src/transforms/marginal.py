@@ -267,7 +267,6 @@ class InverseGaussCDF(AbstractBijection):
 
 
 __all__ = [
-    "HistogramCDF",
     "InverseGaussCDF",
     "MixtureGaussianCDF",
     "MixtureLogisticCDF",

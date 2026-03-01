@@ -29,6 +29,7 @@ dependencies = [
     "numpyro>=0.13",
     "optax>=0.1",
     "paramax",
+    "jaxtyping",
 ]
 
 [project.urls]

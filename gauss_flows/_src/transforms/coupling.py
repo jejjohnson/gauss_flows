@@ -152,16 +152,16 @@ class RQSplineCoupling(AbstractBijection):
 
 
 class DeepSigmoidCoupling(AbstractBijection):
-    """Deep sigmoid coupling layer.
+    """Affine coupling layer with a configurable number of conditioner components.
 
-    Uses a deep sigmoidal network as the transformer in a coupling architecture.
-    The transformer is a composition of sigmoid-based layers parameterized
-    by the conditioner network.
+    This is an affine coupling layer. The ``n_components`` parameter is reserved
+    for a future deep-sigmoidal transformer; currently the layer uses an Affine
+    transformer regardless of that value.
 
     Args:
         key: JAX random key.
         shape: Shape of the input (n_dims,).
-        n_components: Number of sigmoid mixture components. Defaults to 8.
+        n_components: Reserved for future use (deep sigmoid components). Defaults to 8.
         nn_width: Hidden layer width of the conditioner MLP. Defaults to 64.
         nn_depth: Depth of the conditioner MLP. Defaults to 2.
     """
@@ -183,7 +183,7 @@ class DeepSigmoidCoupling(AbstractBijection):
         n_dims = shape[0]
         self.shape = shape
 
-        # Use affine as approximation; full deep sigmoid would require custom bijection
+        # Affine transformer; n_components is reserved for a future deep sigmoid
         affine = Affine()
         self._coupling = Coupling(
             key=key,

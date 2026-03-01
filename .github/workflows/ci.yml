@@ -43,7 +43,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra test
       - name: Run tests
-        run: uv run pytest tests/ -v -m "not slow" --tb=short
+        run: uv run pytest tests/ -v -m "not slow" --tb=short --cov=gauss_flows --cov-report=xml:reports/coverage.xml
       - name: Upload coverage
         if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@v4
