@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2](https://github.com/jejjohnson/gauss_flows/compare/v0.1.1...v0.1.2) (2026-03-01)
+
+
+### Features
+
+* add flowguide - gaussianization flow variational guide for NumPyro SVI ([9eb1a0f](https://github.com/jejjohnson/gauss_flows/commit/9eb1a0f1e85eeac6c80793ca70ec798948ab2ebc))
+
+
+### Bug Fixes
+
+* remove unused imports to fix ruff lint failures ([a9097c2](https://github.com/jejjohnson/gauss_flows/commit/a9097c2ea0fb9924c6f1fede478bc86886d3a984))
+
 ## [0.1.1](https://github.com/jejjohnson/gauss_flows/compare/v0.1.0...v0.1.1) (2026-03-01)
 
 
