@@ -139,9 +139,7 @@ class HaarWavelet(AbstractBijection):
         avg = (even + odd) / 2.0
         diff = (even - odd) / 2.0
         y = jnp.concatenate([avg, diff], axis=-1)
-        # Log det: each 2-element pair has Jacobian det = -1/2 per (avg, diff) output.
-        # With n_pairs = n/2 pairs, total log|det| = -(n/2)*log(2) per the 2×2 block.
-        # Reviewer notes both avg and diff scale by 1/2, giving -n*log(2) total.
+        # Log det: both avg and diff scale by 1/2, giving -n*log(2) total.
         log_det = -x.shape[-1] * jnp.log(2.0)
         return y, log_det
 
