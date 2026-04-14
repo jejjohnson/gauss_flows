@@ -36,6 +36,7 @@ from gauss_flows._src.transforms import (
     Squeeze,
 )
 
+
 __all__ = [
     "ActNorm",
     "ActNorm1D",

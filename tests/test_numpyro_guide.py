@@ -9,6 +9,7 @@ from numpyro.optim import Adam
 import gauss_flows
 from gauss_flows import FlowGuide
 
+
 # ---------------------------------------------------------------------------
 # Helpers / simple models
 # ---------------------------------------------------------------------------

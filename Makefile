@@ -1,87 +1,181 @@
-.PHONY: help install sync lint format test test-all cov check build clean
-.DEFAULT_GOAL = help
+# =============================================================================
+# gauss_flows Makefile
+# =============================================================================
+#
+# PREREQUISITES:
+#   - uv installed  (https://github.com/astral-sh/uv)
+#   - git available in PATH
+#   - Copy .env.example to .env and fill in any overrides (optional)
+#
+# QUICK START:
+#   make help          # Show all available commands
+#   make install       # Install all dependency groups
+#   make test          # Run tests
+#   make lint          # Lint with ruff
+#   make format        # Format with ruff
+#
+# =============================================================================
 
-# ANSI Color Codes for pretty terminal output
+# ---------------------------------------------------------------------------
+# .env support
+# Silently include the .env file; missing file is fine - guard targets catch it.
+# ---------------------------------------------------------------------------
+-include .env
+ifneq (,$(wildcard .env))
+ENV_VARS := $(shell grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env | cut -d= -f1 | xargs)
+export $(ENV_VARS)
+endif
+
+# ---------------------------------------------------------------------------
+# Calculated variables
+# ---------------------------------------------------------------------------
+GIT_HASH := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+PKG_VERSION := $(shell grep -E '^version\s*=' pyproject.toml 2>/dev/null \
+	| sed -E 's/.*"([^"]+)".*/\1/' || echo "unknown")
+
+# ---------------------------------------------------------------------------
+# Paths (override via .env or command line)
+# ---------------------------------------------------------------------------
+PKGROOT ?= src/gauss_flows
+
+# ---------------------------------------------------------------------------
+# ANSI colours
+# ---------------------------------------------------------------------------
 BLUE   := \033[36m
 YELLOW := \033[33m
 GREEN  := \033[32m
 RED    := \033[31m
 RESET  := \033[0m
 
-PKGROOT = gauss_flows
-TESTS = tests
+# ---------------------------------------------------------------------------
+# Guard pattern — usage: add check-env-VARNAME as a prerequisite
+# Example:  my-target: check-env-MY_VAR
+# ---------------------------------------------------------------------------
+check-env-%:
+	@if [ -z "$($*)" ]; then \
+		printf "$(RED)❌  $* is not set.$(RESET)\n"; \
+		printf "$(YELLOW)   Add it to .env or pass inline: make <target> $*=value$(RESET)\n"; \
+		exit 1; \
+	fi
 
-help:	## Display this help
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+# ---------------------------------------------------------------------------
+# Phony declarations
+# ---------------------------------------------------------------------------
+.PHONY: help install init lint format typecheck test test-fast test-cov \
+        precommit build clean version docs docs-serve docs-deploy
 
-##@ Installation
+.DEFAULT_GOAL := help
 
-.PHONY: install
-install: ## Install all project dependencies
-	@printf "$(YELLOW)>>> Initiating environment synchronization and dependency installation...$(RESET)\n"
-	@uv sync --all-extras
-	@uv run pre-commit install
-	@printf "$(GREEN)>>> Environment is ready and pre-commit hooks are active.$(RESET)\n"
+# ===========================================================================
+##@ Meta
+# ===========================================================================
 
-.PHONY: sync
-sync: ## Update lock file and sync dependencies using uv
-	@printf "$(YELLOW)>>> Updating and syncing dependencies with uv...$(RESET)\n"
-	@uv lock --upgrade
-	@uv sync --all-extras
-	@printf "$(GREEN)>>> uv environment synchronized.$(RESET)\n"
+help: ## 📚 Show this help menu
+	@printf "$(YELLOW)🐍 gauss_flows$(RESET)\n"
+	@printf "%s\n" "-----------------------------------------------------------"
+	@awk 'BEGIN {FS = ":.*##"; printf ""} \
+	     /^[a-zA-Z_-]+:.*?##/ { printf "  $(BLUE)%-18s$(RESET) %s\n", $$1, $$2 } \
+	     /^##@/ { printf "\n$(YELLOW)%s$(RESET)\n", substr($$0, 5) } ' \
+	     $(MAKEFILE_LIST)
 
-##@ Formatting and Linting
+version: ## 📋 Display package version and git hash
+	@printf "$(YELLOW)📋 Version Info$(RESET)\n"
+	@printf "%s\n" "-----------------------------------------------------------"
+	@printf "$(GREEN)Package : $(PKG_VERSION)$(RESET)\n"
+	@printf "$(BLUE)Git hash: $(GIT_HASH)$(RESET)\n"
 
-.PHONY: lint
-lint: ## Run ruff check
-	@printf "$(YELLOW)>>> Executing static analysis...$(RESET)\n"
-	@uv run ruff check $(PKGROOT)/ $(TESTS)/
-	@printf "$(GREEN)>>> Linting checks passed.$(RESET)\n"
+# ===========================================================================
+##@ Setup
+# ===========================================================================
 
-.PHONY: format
-format: ## Run ruff formatter
-	@printf "$(YELLOW)>>> Formatting code with ruff...$(RESET)\n"
-	@uv run ruff format $(PKGROOT)/ $(TESTS)/
-	@uv run ruff check --fix $(PKGROOT)/ $(TESTS)/
-	@printf "$(GREEN)>>> Codebase formatted successfully.$(RESET)\n"
+install: ## 📦 Install all dependency groups via uv + pre-commit hooks
+	@printf "$(YELLOW)>>> Installing all dependencies...$(RESET)\n"
+	uv sync --all-groups
+	uv run pre-commit install
+	@printf "$(GREEN)>>> ✅ Installation complete!$(RESET)\n"
 
-##@ Testing
+init: ## 🔧 Bootstrap .env from .env.example (skip if .env already exists)
+	@if [ -f .env ]; then \
+		printf "$(YELLOW)>>> .env already exists — skipping.$(RESET)\n"; \
+	else \
+		cp .env.example .env; \
+		printf "$(GREEN)>>> ✅ .env created from .env.example$(RESET)\n"; \
+	fi
 
-.PHONY: test
-test: ## Run pytest (excluding slow tests)
-	@printf "$(YELLOW)>>> Launching test suite...$(RESET)\n"
-	@uv run pytest $(TESTS)/ -v -m "not slow"
-	@printf "$(GREEN)>>> Tests passed.$(RESET)\n"
-
-.PHONY: test-all
-test-all: ## Run all tests including slow tests
-	@printf "$(YELLOW)>>> Launching full test suite...$(RESET)\n"
-	@uv run pytest $(TESTS)/ -v
-	@printf "$(GREEN)>>> All tests passed.$(RESET)\n"
-
-.PHONY: cov
-cov: ## Run tests with coverage
-	@printf "$(YELLOW)>>> Running tests with coverage...$(RESET)\n"
-	@uv run pytest --cov=$(PKGROOT) --cov-report=xml --cov-report=term-missing $(TESTS)/
-	@printf "$(GREEN)>>> Coverage report generated.$(RESET)\n"
-
+# ===========================================================================
 ##@ Quality
+# ===========================================================================
 
-.PHONY: check
-check: lint test ## Run all checks (lint + test)
-	@printf "$(GREEN)>>> All checks passed.$(RESET)\n"
+lint: ## 🧹 Lint code with ruff (no auto-fix) — entire repo
+	@printf "$(YELLOW)>>> Running ruff check...$(RESET)\n"
+	uv run --group lint ruff check .
+	@printf "$(GREEN)>>> ✅ Lint passed!$(RESET)\n"
 
+format: ## 🖊️  Format code with ruff (format + auto-fix) — entire repo
+	@printf "$(YELLOW)>>> Running ruff format + fix...$(RESET)\n"
+	uv run --group lint ruff format .
+	uv run --group lint ruff check --fix .
+	@printf "$(GREEN)>>> ✅ Format complete!$(RESET)\n"
+
+typecheck: ## 🔬 Type-check with ty
+	@printf "$(YELLOW)>>> Running type checks...$(RESET)\n"
+	uv run --group typecheck ty check $(PKGROOT)
+	@printf "$(GREEN)>>> ✅ Type check passed!$(RESET)\n"
+
+# ===========================================================================
+##@ Testing
+# ===========================================================================
+
+test: ## 🧪 Run tests with pytest (with coverage)
+	@printf "$(YELLOW)>>> Running tests with coverage...$(RESET)\n"
+	uv run pytest -v
+	@printf "$(GREEN)>>> ✅ Tests passed!$(RESET)\n"
+
+test-fast: ## 🏃 Run tests, skipping slow-marked tests
+	@printf "$(YELLOW)>>> Running fast tests (no slow)...$(RESET)\n"
+	uv run pytest -v -m "not slow" -o addopts=
+	@printf "$(GREEN)>>> ✅ Fast tests passed!$(RESET)\n"
+
+test-cov: ## 📊 Run tests with coverage report
+	@printf "$(YELLOW)>>> Running tests with coverage...$(RESET)\n"
+	uv run pytest -v
+	@printf "$(GREEN)>>> ✅ Coverage report generated!$(RESET)\n"
+
+# ===========================================================================
+##@ Pre-commit
+# ===========================================================================
+
+precommit: ## 🪝 Run pre-commit hooks on all files
+	@printf "$(YELLOW)>>> Running pre-commit...$(RESET)\n"
+	uv run pre-commit run --all-files
+	@printf "$(GREEN)>>> ✅ Pre-commit passed!$(RESET)\n"
+
+# ===========================================================================
 ##@ Build
+# ===========================================================================
 
-.PHONY: build
-build: ## Build the package
+build: ## 🏗️  Build Python wheel and sdist
 	@printf "$(YELLOW)>>> Building package...$(RESET)\n"
-	@uv build
-	@printf "$(GREEN)>>> Package built successfully.$(RESET)\n"
+	uv build
+	@printf "$(GREEN)>>> ✅ Build complete — see dist/$(RESET)\n"
 
-.PHONY: clean
-clean: ## Clean build artifacts
-	@printf "$(YELLOW)>>> Cleaning build artifacts...$(RESET)\n"
-	@rm -rf dist/ build/ *.egg-info/ .pytest_cache/ htmlcov/ reports/
-	@find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	@printf "$(GREEN)>>> Cleanup complete.$(RESET)\n"
+clean: ## 🗑️  Remove build artefacts and cache directories
+	@printf "$(YELLOW)>>> Cleaning up...$(RESET)\n"
+	rm -rf dist/ build/ .eggs/ *.egg-info
+	rm -rf .pytest_cache/ .ruff_cache/ .mypy_cache/
+	rm -f .coverage coverage.xml
+	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@printf "$(GREEN)>>> ✅ Clean complete!$(RESET)\n"
+
+# ===========================================================================
+##@ Docs
+# ===========================================================================
+
+docs: ## 📖 Build documentation with mkdocs
+	uv run --group docs mkdocs build
+
+docs-serve: ## 🌐 Serve documentation locally
+	uv run --group docs mkdocs serve
+
+docs-deploy: ## 🚀 Deploy documentation to GitHub Pages
+	uv run --group docs mkdocs gh-deploy --force

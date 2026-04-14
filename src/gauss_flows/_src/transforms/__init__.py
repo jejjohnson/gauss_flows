@@ -27,6 +27,7 @@ from gauss_flows._src.transforms.rotation import (
     OrthogonalRotation,
 )
 
+
 __all__ = [
     "ActNorm",
     "ActNorm1D",
