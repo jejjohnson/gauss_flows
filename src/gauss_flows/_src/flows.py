@@ -186,33 +186,42 @@ def iterative_rbig(
     )
 
 
-def _forward_one(
+def _to_data(
     transform: AbstractBijection | AbstractSurjection,
     x: Array,
     key: PRNGKeyArray,
     cond: Array | None,
 ) -> tuple[Array, Array]:
-    """Apply one chain element in the forward (base -> data) direction.
+    """Apply one chain element in the base -> data direction (used by ``sample``).
 
-    Resolves the FlowJax-vs-SurVAE method-name and signature gap with a
-    single isinstance check so :class:`SurVAEFlow` keeps a uniform call
-    site without wrapping bijections in adapters.
+    Note the directional mismatch between the two ABCs: FlowJax's
+    ``AbstractBijection.transform_and_log_det`` is the base -> data
+    direction (its "sample" side), while SurVAE's
+    ``AbstractSurjection.inverse_and_log_det`` is the latent -> data
+    direction (latent ≡ base). The isinstance dispatch hides this so
+    :class:`SurVAEFlow` keeps a uniform call site without wrapping
+    bijections in adapters.
     """
     if isinstance(transform, AbstractBijection):
         return transform.transform_and_log_det(x, cond)
-    return transform.forward_and_log_det(x, key, cond)
+    return transform.inverse_and_log_det(x, key, cond)
 
 
-def _inverse_one(
+def _to_base(
     transform: AbstractBijection | AbstractSurjection,
     z: Array,
     key: PRNGKeyArray,
     cond: Array | None,
 ) -> tuple[Array, Array]:
-    """Apply one chain element in the inverse (data -> base) direction."""
+    """Apply one chain element in the data -> base direction (used by ``log_prob``).
+
+    Mirror of :func:`_to_data`: bijections use ``inverse_and_log_det``
+    (FlowJax's "log_prob" side), surjections use ``forward_and_log_det``
+    (SurVAE's data -> latent side).
+    """
     if isinstance(transform, AbstractBijection):
         return transform.inverse_and_log_det(z, cond)
-    return transform.inverse_and_log_det(z, key, cond)
+    return transform.forward_and_log_det(z, key, cond)
 
 
 class SurVAEFlow(eqx.Module):
@@ -265,13 +274,31 @@ class SurVAEFlow(eqx.Module):
         all_keys = jr.split(key, len(self.transforms) + 1)
         return all_keys[0], list(all_keys[1:])
 
+    def _single_sample(self, key: PRNGKeyArray, cond: Array | None) -> Array:
+        k_base, t_keys = self._split_keys(key)
+        x = self.base_dist._sample(k_base, cond)
+        for t, k_t in zip(self.transforms, t_keys, strict=True):
+            x, _ = _to_data(t, x, k_t, cond)
+        return x
+
+    def _single_log_prob(
+        self, x: Array, key: PRNGKeyArray, cond: Array | None
+    ) -> Array:
+        _k_base, t_keys = self._split_keys(key)
+        z = x
+        log_det = jnp.zeros(())
+        for t, k_t in zip(reversed(self.transforms), reversed(t_keys), strict=True):
+            z, ld = _to_base(t, z, k_t, cond)
+            log_det = log_det + ld
+        return self.base_dist._log_prob(z, cond) + log_det
+
     def sample(
         self,
         key: PRNGKeyArray,
         sample_shape: tuple[int, ...] = (),
         condition: ArrayLike | None = None,
     ) -> Array:
-        """Sample by drawing from ``base_dist`` and pushing forward.
+        """Sample by drawing from ``base_dist`` and pushing through to data.
 
         Each draw uses an independent key derived from ``key``; ``sample_shape``
         is realised via :func:`jax.vmap` over a leading batch of keys, mirroring
@@ -279,20 +306,13 @@ class SurVAEFlow(eqx.Module):
         """
         cond = None if condition is None else jnp.asarray(condition)
 
-        def _single(k: PRNGKeyArray) -> Array:
-            k_base, t_keys = self._split_keys(k)
-            x = self.base_dist._sample(k_base, cond)
-            for t, k_t in zip(self.transforms, t_keys, strict=True):
-                x, _ = _forward_one(t, x, k_t, cond)
-            return x
-
         if sample_shape == ():
-            return _single(key)
+            return self._single_sample(key, cond)
         n = 1
         for s in sample_shape:
             n *= s
         keys = jr.split(key, n)
-        flat = jax.vmap(_single)(keys)
+        flat = jax.vmap(lambda k: self._single_sample(k, cond))(keys)
         return flat.reshape(sample_shape + flat.shape[1:])
 
     def log_prob(
@@ -303,17 +323,34 @@ class SurVAEFlow(eqx.Module):
     ) -> Array:
         """Evaluate ``log p(x)`` (or its lower bound if any surjection is lower-bound).
 
-        For deterministic chains (bijections + non-stochastic surjections),
-        ``key`` is unused and any value can be passed.
+        Accepts batched inputs of shape ``sample_shape + base_dist.shape``;
+        the leading ``sample_shape`` dimensions are vmapped over and each
+        sample receives its own key derived from ``key``. For deterministic
+        chains (bijections + non-stochastic surjections) the key is unused
+        but still consumed by the dispatch.
         """
         cond = None if condition is None else jnp.asarray(condition)
-        _k_base, t_keys = self._split_keys(key)
-        z = jnp.asarray(x)
-        log_det = jnp.zeros(())
-        for t, k_t in zip(reversed(self.transforms), reversed(t_keys), strict=True):
-            z, ld = _inverse_one(t, z, k_t, cond)
-            log_det = log_det + ld
-        return self.base_dist._log_prob(z, cond) + log_det
+        x = jnp.asarray(x)
+
+        event_shape = self.base_dist.shape
+        n_event = len(event_shape)
+        if n_event > 0 and x.shape[-n_event:] != event_shape:
+            raise ValueError(
+                f"x trailing shape {x.shape[-n_event:]} does not match "
+                f"base_dist.shape {event_shape}."
+            )
+        sample_shape = x.shape if n_event == 0 else x.shape[:-n_event]
+
+        if sample_shape == ():
+            return self._single_log_prob(x, key, cond)
+
+        n = 1
+        for s in sample_shape:
+            n *= s
+        flat = x.reshape((n, *event_shape))
+        keys = jr.split(key, n)
+        out = jax.vmap(lambda xi, ki: self._single_log_prob(xi, ki, cond))(flat, keys)
+        return out.reshape(sample_shape)
 
 
 __all__ = [
