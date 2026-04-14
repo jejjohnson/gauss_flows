@@ -14,7 +14,11 @@ from jaxtyping import PRNGKeyArray
 
 from gauss_flows._src.transforms.coupling import RQSplineCoupling
 from gauss_flows._src.transforms.marginal import MixtureGaussianCDF
-from gauss_flows._src.transforms.rotation import HouseholderRotation, OrthogonalRotation
+from gauss_flows._src.transforms.rotation import (
+    HouseholderRotation,
+    LULinearPermute,
+    OrthogonalRotation,
+)
 
 
 def gaussianization_flow(
@@ -37,7 +41,8 @@ def gaussianization_flow(
         n_layers: Number of flow layers. Defaults to 8.
         n_components: Number of mixture components for marginal Gaussianization.
             Defaults to 8.
-        rotation: Type of rotation, either "householder" or "orthogonal".
+        rotation: Type of rotation, one of ``"householder"``, ``"orthogonal"``,
+            or ``"lu"`` (LU-parametrised linear + reverse permutation).
             Defaults to "householder".
         n_reflections: Number of Householder reflections (only for "householder").
             Defaults to n_dims.
@@ -57,6 +62,8 @@ def gaussianization_flow(
             rot = HouseholderRotation(n_reflections=n_reflections, shape=shape)
         elif rotation == "orthogonal":
             rot = OrthogonalRotation(shape=shape)
+        elif rotation == "lu":
+            rot = LULinearPermute(shape=shape)
         else:
             raise ValueError(f"Unknown rotation type: {rotation!r}")
         return Chain([marginal, rot])
