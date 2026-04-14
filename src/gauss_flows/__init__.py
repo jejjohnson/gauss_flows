@@ -3,6 +3,9 @@
 Public API re-exported from the private _src/ implementation directory.
 """
 
+from gauss_flows._src.distributions import (
+    GaussianMixture,
+)
 from gauss_flows._src.flows import (
     coupling_gaussianization_flow,
     gaussianization_flow,
@@ -45,6 +48,7 @@ __all__ = [
     "FixedRotation",
     "FlowDist",
     "FlowGuide",
+    "GaussianMixture",
     "HaarWavelet",
     "HouseholderRotation",
     "InverseGaussCDF",

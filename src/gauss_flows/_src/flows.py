@@ -9,7 +9,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 from flowjax.bijections import Chain, Flip, Invert, Permute, Scan
-from flowjax.distributions import Normal, Transformed
+from flowjax.distributions import AbstractDistribution, Normal, Transformed
 from jaxtyping import PRNGKeyArray
 
 from gauss_flows._src.transforms.coupling import RQSplineCoupling
@@ -25,6 +25,7 @@ def gaussianization_flow(
     n_components: int = 8,
     rotation: str = "householder",
     n_reflections: int | None = None,
+    base_dist: AbstractDistribution | None = None,
 ) -> Transformed:
     """Construct a Gaussianization flow.
 
@@ -41,6 +42,8 @@ def gaussianization_flow(
             Defaults to "householder".
         n_reflections: Number of Householder reflections (only for "householder").
             Defaults to n_dims.
+        base_dist: Optional base distribution override (must have event
+            shape ``(n_dims,)``). Defaults to a standard ``Normal``.
 
     Returns:
         A flowjax Transformed distribution.
@@ -49,7 +52,12 @@ def gaussianization_flow(
         n_reflections = n_dims
 
     shape = (n_dims,)
-    base_dist = Normal(jnp.zeros(n_dims))
+    if base_dist is None:
+        base_dist = Normal(jnp.zeros(n_dims))
+    elif base_dist.shape != shape:
+        raise ValueError(
+            f"base_dist.shape {base_dist.shape} does not match (n_dims,) = {shape}."
+        )
 
     def make_layer(key):
         marginal = MixtureGaussianCDF(n_components=n_components, shape=shape)
