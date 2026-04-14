@@ -40,7 +40,11 @@ from gauss_flows._src.transforms import (
     PlanarFlow,
     RQSplineCoupling,
     RQSplineMarginal,
+    SimpleAbsSurjection,
+    SimpleMaxPoolSurjection2d,
+    SimpleSortSurjection,
     Squeeze,
+    StochasticPermutation,
     SylvesterFlow,
 )
 from gauss_flows._src.transforms.base import (
@@ -72,7 +76,11 @@ __all__ = [
     "PlanarFlow",
     "RQSplineCoupling",
     "RQSplineMarginal",
+    "SimpleAbsSurjection",
+    "SimpleMaxPoolSurjection2d",
+    "SimpleSortSurjection",
     "Squeeze",
+    "StochasticPermutation",
     "SurVAEFlow",
     "SylvesterFlow",
     "coupling_gaussianization_flow",

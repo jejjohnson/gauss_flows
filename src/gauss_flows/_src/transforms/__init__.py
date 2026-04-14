@@ -31,6 +31,12 @@ from gauss_flows._src.transforms.rotation import (
     LULinearPermute,
     OrthogonalRotation,
 )
+from gauss_flows._src.transforms.stochastic import StochasticPermutation
+from gauss_flows._src.transforms.surjections import (
+    SimpleAbsSurjection,
+    SimpleMaxPoolSurjection2d,
+    SimpleSortSurjection,
+)
 
 
 __all__ = [
@@ -50,6 +56,10 @@ __all__ = [
     "PlanarFlow",
     "RQSplineCoupling",
     "RQSplineMarginal",
+    "SimpleAbsSurjection",
+    "SimpleMaxPoolSurjection2d",
+    "SimpleSortSurjection",
     "Squeeze",
+    "StochasticPermutation",
     "SylvesterFlow",
 ]

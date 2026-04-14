@@ -30,6 +30,7 @@ dependencies = [
     "optax>=0.1",
     "paramax",
     "jaxtyping",
+    "einops>=0.8.2",
 ]
 
 [project.urls]
