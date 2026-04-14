@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3](https://github.com/jejjohnson/gauss_flows/compare/v0.1.2...v0.1.3) (2026-04-14)
+
+
+### Features
+
+* **pr-10:** add GaussianPCA base distribution ([#40](https://github.com/jejjohnson/gauss_flows/issues/40)) ([bee257f](https://github.com/jejjohnson/gauss_flows/commit/bee257f32c3be54a8edeedc646e49b15ca63a8d8))
+* **pr-12:** add LULinearPermute bijection ([#37](https://github.com/jejjohnson/gauss_flows/issues/37)) ([e173270](https://github.com/jejjohnson/gauss_flows/commit/e173270cc9cdfb0643a77a00a898ee7d1d2ca143))
+* **pr-21:** add PlanarFlow and SylvesterFlow bijections ([#38](https://github.com/jejjohnson/gauss_flows/issues/38)) ([d315536](https://github.com/jejjohnson/gauss_flows/commit/d31553605d67773be5f5403323d6df53714d9528))
+* **pr-9:** add GaussianMixture base distribution ([#39](https://github.com/jejjohnson/gauss_flows/issues/39)) ([dd44ce8](https://github.com/jejjohnson/gauss_flows/commit/dd44ce8404c96cdb804f3ce23ead2e477ed2e4f5))
+
 ## [0.1.2](https://github.com/jejjohnson/gauss_flows/compare/v0.1.1...v0.1.2) (2026-03-01)
 
 
