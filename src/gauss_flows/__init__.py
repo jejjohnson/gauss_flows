@@ -32,9 +32,11 @@ from gauss_flows._src.transforms import (
     MixtureGaussianCDF,
     MixtureLogisticCDF,
     OrthogonalRotation,
+    PlanarFlow,
     RQSplineCoupling,
     RQSplineMarginal,
     Squeeze,
+    SylvesterFlow,
 )
 
 
@@ -54,9 +56,11 @@ __all__ = [
     "MixtureGaussianCDF",
     "MixtureLogisticCDF",
     "OrthogonalRotation",
+    "PlanarFlow",
     "RQSplineCoupling",
     "RQSplineMarginal",
     "Squeeze",
+    "SylvesterFlow",
     "coupling_gaussianization_flow",
     "entropy",
     "fit_gaussianization_flow",

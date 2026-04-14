@@ -3,6 +3,10 @@
 Re-exports all transform classes from the sub-modules.
 """
 
+from gauss_flows._src.transforms.classic import (
+    PlanarFlow,
+    SylvesterFlow,
+)
 from gauss_flows._src.transforms.conv import (
     ActNorm,
     HaarWavelet,
@@ -43,7 +47,9 @@ __all__ = [
     "MixtureGaussianCDF",
     "MixtureLogisticCDF",
     "OrthogonalRotation",
+    "PlanarFlow",
     "RQSplineCoupling",
     "RQSplineMarginal",
     "Squeeze",
+    "SylvesterFlow",
 ]
