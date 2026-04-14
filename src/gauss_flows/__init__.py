@@ -8,6 +8,7 @@ from gauss_flows._src.distributions import (
     GaussianPCA,
 )
 from gauss_flows._src.flows import (
+    SurVAEFlow,
     coupling_gaussianization_flow,
     gaussianization_flow,
     iterative_rbig,
@@ -42,9 +43,15 @@ from gauss_flows._src.transforms import (
     Squeeze,
     SylvesterFlow,
 )
+from gauss_flows._src.transforms.base import (
+    AbstractStochastic,
+    AbstractSurjection,
+)
 
 
 __all__ = [
+    "AbstractStochastic",
+    "AbstractSurjection",
     "ActNorm",
     "ActNorm1D",
     "AffineCoupling",
@@ -66,6 +73,7 @@ __all__ = [
     "RQSplineCoupling",
     "RQSplineMarginal",
     "Squeeze",
+    "SurVAEFlow",
     "SylvesterFlow",
     "coupling_gaussianization_flow",
     "entropy",

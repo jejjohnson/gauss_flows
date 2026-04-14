@@ -2,16 +2,21 @@
 
 This module provides factory functions for constructing various normalizing
 flow architectures based on RBIG (Rotation-Based Iterative Gaussianization)
-and related methods.
+and related methods, plus the :class:`SurVAEFlow` container that mixes
+ordinary FlowJax bijections with the keyed surjection / stochastic
+transforms defined in :mod:`gauss_flows._src.transforms.base`.
 """
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import jax.random as jr
-from flowjax.bijections import Chain, Flip, Invert, Permute, Scan
+from flowjax.bijections import AbstractBijection, Chain, Flip, Invert, Permute, Scan
 from flowjax.distributions import AbstractDistribution, Normal, Transformed
-from jaxtyping import PRNGKeyArray
+from jax import Array
+from jaxtyping import ArrayLike, PRNGKeyArray
 
+from gauss_flows._src.transforms.base import AbstractSurjection
 from gauss_flows._src.transforms.coupling import RQSplineCoupling
 from gauss_flows._src.transforms.marginal import MixtureGaussianCDF
 from gauss_flows._src.transforms.rotation import (
@@ -181,7 +186,175 @@ def iterative_rbig(
     )
 
 
+def _to_data(
+    transform: AbstractBijection | AbstractSurjection,
+    x: Array,
+    key: PRNGKeyArray,
+    cond: Array | None,
+) -> tuple[Array, Array]:
+    """Apply one chain element in the base -> data direction (used by ``sample``).
+
+    Note the directional mismatch between the two ABCs: FlowJax's
+    ``AbstractBijection.transform_and_log_det`` is the base -> data
+    direction (its "sample" side), while SurVAE's
+    ``AbstractSurjection.inverse_and_log_det`` is the latent -> data
+    direction (latent ≡ base). The isinstance dispatch hides this so
+    :class:`SurVAEFlow` keeps a uniform call site without wrapping
+    bijections in adapters.
+    """
+    if isinstance(transform, AbstractBijection):
+        return transform.transform_and_log_det(x, cond)
+    return transform.inverse_and_log_det(x, key, cond)
+
+
+def _to_base(
+    transform: AbstractBijection | AbstractSurjection,
+    z: Array,
+    key: PRNGKeyArray,
+    cond: Array | None,
+) -> tuple[Array, Array]:
+    """Apply one chain element in the data -> base direction (used by ``log_prob``).
+
+    Mirror of :func:`_to_data`: bijections use ``inverse_and_log_det``
+    (FlowJax's "log_prob" side), surjections use ``forward_and_log_det``
+    (SurVAE's data -> latent side).
+    """
+    if isinstance(transform, AbstractBijection):
+        return transform.inverse_and_log_det(z, cond)
+    return transform.forward_and_log_det(z, key, cond)
+
+
+class SurVAEFlow(eqx.Module):
+    """Container that threads PRNG keys through a mixed bijection / surjection chain.
+
+    Composes any sequence of :class:`flowjax.bijections.AbstractBijection` and
+    :class:`AbstractSurjection` transforms. Forward direction is base -> data
+    (used by ``sample``); inverse direction is data -> base (used by
+    ``log_prob``). Each transform receives its own independent split of the
+    user-supplied key, regardless of whether it actually consumes it — this
+    keeps the call shape uniform and JIT-friendly.
+
+    For a chain consisting solely of :class:`AbstractBijection` instances,
+    ``log_prob`` is identical (up to numerical noise) to that of the
+    equivalent ``flowjax.distributions.Transformed(base, Chain(transforms))``,
+    so users can migrate without changing semantics.
+
+    Attributes:
+        base_dist: A :class:`flowjax.distributions.AbstractDistribution`
+            whose event shape matches the start of the forward chain.
+        transforms: Tuple of bijections / surjections, applied left-to-right
+            in the forward direction.
+
+    Properties:
+        lower_bound: ``True`` iff at least one surjection in the chain
+            contributes a lower bound to ``log_prob`` (i.e. has its
+            class-level ``lower_bound`` flag set).
+    """
+
+    base_dist: AbstractDistribution
+    transforms: tuple[AbstractBijection | AbstractSurjection, ...]
+
+    def __init__(
+        self,
+        base_dist: AbstractDistribution,
+        transforms: tuple[AbstractBijection | AbstractSurjection, ...]
+        | list[AbstractBijection | AbstractSurjection],
+    ):
+        self.base_dist = base_dist
+        self.transforms = tuple(transforms)
+
+    @property
+    def lower_bound(self) -> bool:
+        return any(
+            isinstance(t, AbstractSurjection) and t.lower_bound for t in self.transforms
+        )
+
+    def _split_keys(self, key: PRNGKeyArray) -> tuple[PRNGKeyArray, list[PRNGKeyArray]]:
+        """Split ``key`` into one base-distribution key plus one per transform."""
+        all_keys = jr.split(key, len(self.transforms) + 1)
+        return all_keys[0], list(all_keys[1:])
+
+    def _single_sample(self, key: PRNGKeyArray, cond: Array | None) -> Array:
+        k_base, t_keys = self._split_keys(key)
+        x = self.base_dist._sample(k_base, cond)
+        for t, k_t in zip(self.transforms, t_keys, strict=True):
+            x, _ = _to_data(t, x, k_t, cond)
+        return x
+
+    def _single_log_prob(
+        self, x: Array, key: PRNGKeyArray, cond: Array | None
+    ) -> Array:
+        _k_base, t_keys = self._split_keys(key)
+        z = x
+        log_det = jnp.zeros(())
+        for t, k_t in zip(reversed(self.transforms), reversed(t_keys), strict=True):
+            z, ld = _to_base(t, z, k_t, cond)
+            log_det = log_det + ld
+        return self.base_dist._log_prob(z, cond) + log_det
+
+    def sample(
+        self,
+        key: PRNGKeyArray,
+        sample_shape: tuple[int, ...] = (),
+        condition: ArrayLike | None = None,
+    ) -> Array:
+        """Sample by drawing from ``base_dist`` and pushing through to data.
+
+        Each draw uses an independent key derived from ``key``; ``sample_shape``
+        is realised via :func:`jax.vmap` over a leading batch of keys, mirroring
+        the FlowJax convention.
+        """
+        cond = None if condition is None else jnp.asarray(condition)
+
+        if sample_shape == ():
+            return self._single_sample(key, cond)
+        n = 1
+        for s in sample_shape:
+            n *= s
+        keys = jr.split(key, n)
+        flat = jax.vmap(lambda k: self._single_sample(k, cond))(keys)
+        return flat.reshape(sample_shape + flat.shape[1:])
+
+    def log_prob(
+        self,
+        x: ArrayLike,
+        key: PRNGKeyArray,
+        condition: ArrayLike | None = None,
+    ) -> Array:
+        """Evaluate ``log p(x)`` (or its lower bound if any surjection is lower-bound).
+
+        Accepts batched inputs of shape ``sample_shape + base_dist.shape``;
+        the leading ``sample_shape`` dimensions are vmapped over and each
+        sample receives its own key derived from ``key``. For deterministic
+        chains (bijections + non-stochastic surjections) the key is unused
+        but still consumed by the dispatch.
+        """
+        cond = None if condition is None else jnp.asarray(condition)
+        x = jnp.asarray(x)
+
+        event_shape = self.base_dist.shape
+        n_event = len(event_shape)
+        if n_event > 0 and x.shape[-n_event:] != event_shape:
+            raise ValueError(
+                f"x trailing shape {x.shape[-n_event:]} does not match "
+                f"base_dist.shape {event_shape}."
+            )
+        sample_shape = x.shape if n_event == 0 else x.shape[:-n_event]
+
+        if sample_shape == ():
+            return self._single_log_prob(x, key, cond)
+
+        n = 1
+        for s in sample_shape:
+            n *= s
+        flat = x.reshape((n, *event_shape))
+        keys = jr.split(key, n)
+        out = jax.vmap(lambda xi, ki: self._single_log_prob(xi, ki, cond))(flat, keys)
+        return out.reshape(sample_shape)
+
+
 __all__ = [
+    "SurVAEFlow",
     "coupling_gaussianization_flow",
     "gaussianization_flow",
     "iterative_rbig",
