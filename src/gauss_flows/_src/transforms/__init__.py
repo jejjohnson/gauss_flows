@@ -24,6 +24,7 @@ from gauss_flows._src.transforms.marginal import (
 from gauss_flows._src.transforms.rotation import (
     FixedRotation,
     HouseholderRotation,
+    LULinearPermute,
     OrthogonalRotation,
 )
 
@@ -38,6 +39,7 @@ __all__ = [
     "HouseholderRotation",
     "InverseGaussCDF",
     "Invertible1x1Conv",
+    "LULinearPermute",
     "MixtureGaussianCDF",
     "MixtureLogisticCDF",
     "OrthogonalRotation",
