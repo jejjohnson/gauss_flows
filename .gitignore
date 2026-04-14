@@ -61,7 +61,6 @@ dmypy.json
 
 # Jupyter Notebook
 .ipynb_checkpoints
-*.ipynb
 
 # Distribution / packaging
 *.tar.gz
@@ -69,12 +68,17 @@ dmypy.json
 
 # uv
 .uv/
-uv.lock
 
 # macOS
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# mkdocs site
+/site
+
+# Plans (tracked via GitHub issues, not committed)
+.plans/
 
 # Project
 .project-root
