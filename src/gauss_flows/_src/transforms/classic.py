@@ -14,6 +14,7 @@ References:
 
 from typing import ClassVar
 
+import jax
 import jax.numpy as jnp
 import jax.random as jr
 from flowjax.bijections import AbstractBijection
@@ -108,8 +109,10 @@ class SylvesterFlow(AbstractBijection):
         key: JAX random key.
         shape: Shape of the input ``(n_dims,)``.
         rank: Rank ``M`` of the flow. Defaults to the full input dim.
-        scale_init: Std of Gaussian init for the triangular strict upper
-            entries.
+        scale_init: Std of the Gaussian used to initialise the Householder
+            vectors (offset from the identity), the strict upper-triangular
+            entries of ``R`` and ``R_tilde``, and their raw diagonal
+            parameter vectors.
 
     Note:
         No algebraic inverse; ``inverse_and_log_det`` raises
@@ -153,15 +156,48 @@ class SylvesterFlow(AbstractBijection):
         self.R_tilde_upper = jr.normal(k_tu, (n_strict,)) * scale_init
         self.b = jnp.zeros((m,))
 
-    def _build_Q(self) -> Array:
-        """Householder-parametrised matrix with orthonormal columns (D, M)."""
-        d = self.shape[0]
+    def _q_transpose_apply(self, x: Array) -> Array:
+        """Compute ``Q.T @ x`` without materialising Q.
+
+        ``Q = (H_1 H_2 ... H_M) @ E`` where ``E = I_D[:, :M]`` selects the
+        first M columns. So ``Q.T @ x = E.T @ (H_M ... H_1) @ x``: apply
+        Householders ``H_1, ..., H_M`` in order, then take the leading M
+        components.
+        """
+
+        def body(carry, vec):
+            v_norm = vec / (jnp.linalg.norm(vec) + 1e-12)
+            return carry - 2.0 * v_norm * jnp.dot(v_norm, carry), None
+
+        result, _ = jax.lax.scan(body, x, self.householder_vectors)
         m = self.householder_vectors.shape[0]
-        Q = jnp.eye(d)
-        for v in self.householder_vectors:
-            v = v / (jnp.linalg.norm(v) + 1e-12)
-            Q = Q - 2.0 * jnp.outer(v, v @ Q)
-        return Q[:, :m]
+        return result[:m]
+
+    def _q_apply(self, v: Array) -> Array:
+        """Compute ``Q @ v`` without materialising Q.
+
+        Pad ``v`` (shape ``(M,)``) to ``D`` with zeros, then apply the
+        Householder reflections in reverse order.
+        """
+        d = self.shape[0]
+        w = jnp.zeros(d).at[: v.shape[0]].set(v)
+
+        def body(carry, vec):
+            v_norm = vec / (jnp.linalg.norm(vec) + 1e-12)
+            return carry - 2.0 * v_norm * jnp.dot(v_norm, carry), None
+
+        result, _ = jax.lax.scan(body, w, self.householder_vectors[::-1])
+        return result
+
+    def _build_Q(self) -> Array:
+        """Materialise ``Q`` as a ``(D, M)`` matrix.
+
+        Used by tests to verify orthonormality. The hot path
+        (``transform_and_log_det``) uses :meth:`_q_apply` /
+        :meth:`_q_transpose_apply` and never builds this matrix.
+        """
+        m = self.householder_vectors.shape[0]
+        return jax.vmap(self._q_apply, in_axes=1, out_axes=1)(jnp.eye(m))
 
     def _build_upper_triangular(self, diag: Array, strict_upper: Array) -> Array:
         m = diag.shape[0]
@@ -181,10 +217,9 @@ class SylvesterFlow(AbstractBijection):
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
         x = jnp.asarray(x)
-        Q = self._build_Q()
         R, R_tilde, r_diag, r_tilde_diag = self._build_RR_tilde()
-        z = R @ (Q.T @ x) + self.b
-        y = x + Q @ (R_tilde @ jnp.tanh(z))
+        z = R @ self._q_transpose_apply(x) + self.b
+        y = x + self._q_apply(R_tilde @ jnp.tanh(z))
         # Sylvester's identity: det(I_D + Q R_tilde diag(h') R Q^T)
         # = det(I_M + R_tilde diag(h') R). Both R, R_tilde upper-triangular, so
         # the result is upper-triangular with diagonal

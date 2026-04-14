@@ -9,9 +9,13 @@ from gauss_flows import PlanarFlow, SylvesterFlow
 
 
 def _log_det_from_jacobian(fn, x):
-    """Reference log-abs-det via explicit Jacobian of fn at x."""
+    """Reference log-abs-det via explicit Jacobian of fn at x.
+
+    Uses ``slogdet`` rather than ``log(abs(det))`` so the test reference is
+    numerically stable even when det is very small or very large.
+    """
     J = jax.jacobian(fn)(x)
-    return jnp.log(jnp.abs(jnp.linalg.det(J)))
+    return jnp.linalg.slogdet(J)[1]
 
 
 def test_planar_log_det_matches_jacobian(key):
@@ -41,13 +45,26 @@ def test_planar_inverse_raises(key):
 
 
 def test_planar_invertibility_projection_keeps_det_positive(key):
-    """u_hat projection ensures 1 + u_hat.w * (1 - tanh²) >= 0."""
+    """u_hat projection ensures the planar Jacobian determinant stays positive.
+
+    The projection enforces ``w . u_hat >= -1``, which keeps
+    ``1 + (1 - tanh^2(a)) * (u_hat . w)`` non-negative — i.e. the Jacobian
+    determinant cannot flip sign. We verify this directly rather than just
+    checking ``isfinite(log_det)`` (which would pass even if the
+    implementation took ``abs`` of a negative determinant).
+    """
     shape = (4,)
-    # Force |u|, |w| large to exercise the projection
+    # Large init exercises the projection (without it, w . u could be < -1).
     flow = PlanarFlow(key, shape=shape, scale_init=5.0)
     x = jr.normal(jr.fold_in(key, 2), shape)
     _, log_det = flow.transform_and_log_det(x)
-    assert jnp.isfinite(log_det)
+
+    jacobian = jax.jacobian(lambda z: flow.transform_and_log_det(z)[0])(x)
+    det = jnp.linalg.det(jacobian)
+    assert det > 0
+    assert jnp.allclose(log_det, jnp.log(det), atol=1e-5)
+    # Independently check the algebraic invertibility condition.
+    assert jnp.dot(flow.w, flow._u_hat()) >= -1.0
 
 
 def test_sylvester_log_det_matches_jacobian_full_rank(key):
