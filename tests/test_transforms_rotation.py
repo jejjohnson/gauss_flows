@@ -3,6 +3,7 @@
 import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
+import pytest
 
 from gauss_flows import (
     FixedRotation,
@@ -136,3 +137,22 @@ def test_gaussianization_flow_accepts_lu_rotation(key):
     assert samples.shape == (16, 3)
     assert log_probs.shape == (16,)
     assert jnp.all(jnp.isfinite(log_probs))
+
+
+@pytest.mark.parametrize(
+    "bad_perm",
+    [
+        jnp.array([0, 1, 1, 3]),  # duplicate
+        jnp.array([0, 1, 2, 4]),  # out of range (high)
+        jnp.array([-1, 0, 1, 2]),  # out of range (low)
+    ],
+    ids=["duplicate", "out_of_range_high", "out_of_range_low"],
+)
+def test_lu_linear_permute_rejects_invalid_permutation(bad_perm):
+    with pytest.raises(ValueError, match="permutation must be a permutation"):
+        LULinearPermute(shape=(4,), permutation=bad_perm)
+
+
+def test_lu_linear_permute_rejects_wrong_shape_permutation():
+    with pytest.raises(ValueError, match="permutation must have shape"):
+        LULinearPermute(shape=(4,), permutation=jnp.array([0, 1, 2]))

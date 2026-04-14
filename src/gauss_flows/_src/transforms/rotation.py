@@ -159,6 +159,7 @@ class LULinearPermute(AbstractBijection):
     upper_params: Array
     log_diag: Array
     permutation: Array
+    inv_permutation: Array
 
     def __init__(
         self,
@@ -181,7 +182,15 @@ class LULinearPermute(AbstractBijection):
                 raise ValueError(
                     f"permutation must have shape ({n_dims},), got {perm.shape}."
                 )
+            if sorted(perm.tolist()) != list(range(n_dims)):
+                raise ValueError(
+                    f"permutation must be a permutation of 0..{n_dims - 1}, "
+                    f"got {perm.tolist()}."
+                )
             self.permutation = perm
+        # Cache the inverse permutation so inverse_and_log_det avoids an argsort
+        # on every call.
+        self.inv_permutation = jnp.argsort(self.permutation)
 
     def _build_lu(self) -> tuple[Array, Array]:
         n = self.shape[0]
@@ -202,7 +211,7 @@ class LULinearPermute(AbstractBijection):
     def inverse_and_log_det(self, y: ArrayLike, condition=None):
         L, U = self._build_lu()
         y = jnp.asarray(y)
-        y = y[jnp.argsort(self.permutation)]
+        y = y[self.inv_permutation]
         w = jax.scipy.linalg.solve_triangular(L, y, lower=True, unit_diagonal=True)
         x = jax.scipy.linalg.solve_triangular(U, w, lower=False)
         log_det = -jnp.sum(self.log_diag)
