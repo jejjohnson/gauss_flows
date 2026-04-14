@@ -77,3 +77,21 @@ def test_custom_loc(key):
     loc = jnp.array([1.0, -2.0, 3.0])
     dist = GaussianPCA(key, event_shape=(3,), latent_dim=2, loc=loc)
     assert jnp.allclose(dist.loc, loc)
+
+
+def test_log_prob_stable_for_very_negative_log_sigma(key):
+    """log_sigma deeply negative shouldn't make sigma^2 underflow to zero
+    and break Cholesky / Woodbury — the eps floor keeps log_prob finite.
+    """
+    import equinox as eqx
+
+    dist = GaussianPCA(key, event_shape=(4,), latent_dim=2)
+    dist = eqx.tree_at(lambda d: d.log_sigma, dist, jnp.asarray(-50.0))
+    x = jr.normal(jr.fold_in(key, 1), (4,))
+    lp = dist.log_prob(x)
+    assert jnp.isfinite(lp)
+
+
+def test_eps_must_be_non_negative(key):
+    with pytest.raises(ValueError, match="eps"):
+        GaussianPCA(key, event_shape=(3,), latent_dim=2, eps=-1.0)
