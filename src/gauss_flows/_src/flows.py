@@ -54,10 +54,17 @@ def gaussianization_flow(
     shape = (n_dims,)
     if base_dist is None:
         base_dist = Normal(jnp.zeros(n_dims))
-    elif base_dist.shape != shape:
-        raise ValueError(
-            f"base_dist.shape {base_dist.shape} does not match (n_dims,) = {shape}."
-        )
+    else:
+        if base_dist.shape != shape:
+            raise ValueError(
+                f"base_dist.shape {base_dist.shape} does not match (n_dims,) = {shape}."
+            )
+        if base_dist.cond_shape is not None:
+            raise ValueError(
+                "Conditional base distributions are not supported by "
+                "gaussianization_flow (no condition is threaded through). "
+                f"Got base_dist with cond_shape={base_dist.cond_shape}."
+            )
 
     def make_layer(key):
         marginal = MixtureGaussianCDF(n_components=n_components, shape=shape)

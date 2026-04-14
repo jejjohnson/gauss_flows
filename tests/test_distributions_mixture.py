@@ -107,10 +107,19 @@ def test_fits_known_gmm_via_log_prob_improvement(key):
         return jnp.argmax(log_pdfs, axis=0)
 
     assign = hard_assign(init)
+
+    # Guard against empty assignments: keep the prior loc for any component
+    # that received zero points (otherwise jnp.mean of an empty slice is NaN
+    # and the test fails for reasons unrelated to GaussianMixture itself).
+    def _safe_mean(mask, prior_loc):
+        count = jnp.sum(mask)
+        masked_sum = jnp.sum(jnp.where(mask[:, None], data, 0.0), axis=0)
+        return jnp.where(count > 0, masked_sum / jnp.maximum(count, 1), prior_loc)
+
     new_loc = jnp.stack(
         [
-            jnp.mean(data[assign == 0], axis=0),
-            jnp.mean(data[assign == 1], axis=0),
+            _safe_mean(assign == 0, init.loc[0]),
+            _safe_mean(assign == 1, init.loc[1]),
         ]
     )
     fitted = eqx.tree_at(lambda d: d.loc, init, new_loc)
@@ -135,6 +144,23 @@ def test_event_shape_mismatch_raises(key):
     base = GaussianMixture(k_base, n_components=2, event_shape=(4,))
     with pytest.raises(ValueError, match=r"base_dist\.shape"):
         gaussianization_flow(k_flow, n_dims=3, n_layers=2, base_dist=base)
+
+
+def test_conditional_base_dist_raises(key):
+    """gaussianization_flow doesn't thread a condition, so reject conditional bases."""
+
+    # Forge a conditional version of GaussianMixture by overriding cond_shape
+    # at the class level in a tiny subclass — easier than building a full
+    # conditional distribution from scratch.
+    class _ConditionalMixture(GaussianMixture):
+        cond_shape: tuple[int, ...] | None = (1,)  # type: ignore[assignment]
+
+    conditional = _ConditionalMixture(key, n_components=2, event_shape=(3,))
+    assert conditional.cond_shape == (1,)
+    with pytest.raises(ValueError, match="Conditional base distributions"):
+        gaussianization_flow(
+            jr.fold_in(key, 1), n_dims=3, n_layers=2, base_dist=conditional
+        )
 
 
 def test_n_components_must_be_positive(key):
