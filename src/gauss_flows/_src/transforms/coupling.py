@@ -4,8 +4,11 @@ These bijections implement various coupling-based architectures used in
 normalizing flows for density estimation.
 """
 
+from __future__ import annotations
+
 from typing import ClassVar
 
+import equinox as eqx
 import jax.numpy as jnp
 from flowjax.bijections import (
     AbstractBijection,
@@ -13,8 +16,8 @@ from flowjax.bijections import (
     RationalQuadraticSpline,
 )
 from flowjax.bijections.affine import Affine
-from jax import Array
-from jax.nn import softplus
+from jax import Array, lax
+from jax.nn import sigmoid, softplus
 from jaxtyping import ArrayLike, PRNGKeyArray
 
 
@@ -151,17 +154,97 @@ class RQSplineCoupling(AbstractBijection):
         return self._coupling.inverse_and_log_det(jnp.asarray(y), condition)
 
 
-class DeepSigmoidCoupling(AbstractBijection):
-    """Affine coupling layer with a configurable number of conditioner components.
+class _DeepSigmoidTransformer(AbstractBijection):
+    """Monotone dense sigmoid transformer for a single dimension."""
 
-    This is an affine coupling layer. The ``n_components`` parameter is reserved
-    for a future deep-sigmoidal transformer; currently the layer uses an Affine
-    transformer regardless of that value.
+    n_components: int = eqx.field(static=True)
+    shape: tuple[int, ...]
+    cond_shape: ClassVar[None] = None
+    bias: Array
+    log_base_scale: Array
+    log_amplitudes: Array
+    log_slopes: Array
+    shifts: Array
+
+    def __init__(self, n_components: int):
+        self.n_components = n_components
+        self.shape = ()
+        self.bias = jnp.array(0.0)
+        self.log_base_scale = jnp.array(0.0)
+        self.log_amplitudes = jnp.zeros((n_components,))
+        self.log_slopes = jnp.zeros((n_components,))
+        self.shifts = jnp.zeros((n_components,))
+
+    def _parameters(self):
+        base_scale = softplus(self.log_base_scale) + 1e-4
+        amplitudes = softplus(self.log_amplitudes) + 1e-4
+        slopes = softplus(self.log_slopes) + 1e-4
+        return base_scale, amplitudes, slopes
+
+    def _forward(self, x: Array):
+        base_scale, amplitudes, slopes = self._parameters()
+        preactivations = slopes * x + self.shifts
+        sig = sigmoid(preactivations)
+        y = base_scale * x + self.bias + jnp.sum(amplitudes * sig, axis=-1)
+        dy_dx = base_scale + jnp.sum(amplitudes * slopes * sig * (1.0 - sig), axis=-1)
+        return y, dy_dx
+
+    def transform_and_log_det(self, x: ArrayLike, condition=None):
+        y, dy_dx = self._forward(jnp.asarray(x))
+        log_det = jnp.log(dy_dx)
+        return y, log_det
+
+    def inverse_and_log_det(self, y: ArrayLike, condition=None):
+        y = jnp.asarray(y)
+        base_scale, amplitudes, _ = self._parameters()
+        approx_center = (y - self.bias - 0.5 * jnp.sum(amplitudes)) / base_scale
+        span = 10.0
+        lo = approx_center - span
+        hi = approx_center + span
+
+        def _maybe_expand(i, bounds):
+            lo_val, hi_val = bounds
+            width = span * (2.0**i)
+            y_lo, _ = self._forward(lo_val)
+            y_hi, _ = self._forward(hi_val)
+            expand_down = y_lo > y
+            expand_up = y_hi < y
+            return (
+                jnp.where(expand_down, lo_val - width, lo_val),
+                jnp.where(expand_up, hi_val + width, hi_val),
+            )
+
+        lo, hi = lax.fori_loop(0, 6, _maybe_expand, (lo, hi))
+
+        def _bisect(_i, bounds):
+            lo_val, hi_val = bounds
+            mid = 0.5 * (lo_val + hi_val)
+            y_mid, _ = self._forward(mid)
+            go_up = y_mid < y
+            return (
+                jnp.where(go_up, mid, lo_val),
+                jnp.where(go_up, hi_val, mid),
+            )
+
+        lo, hi = lax.fori_loop(0, 50, _bisect, (lo, hi))
+        x = 0.5 * (lo + hi)
+        _, dy_dx = self._forward(x)
+        log_det = -jnp.log(dy_dx)
+        return x, log_det
+
+
+class DeepSigmoidCoupling(AbstractBijection):
+    """Monotone deep-sigmoid coupling layer.
+
+    Replaces the affine transformer with a deep dense sigmoid flow (DDSF) style
+    monotone network composed of sigmoid activations and positive weights. The
+    ``n_components`` parameter sets the number of sigmoid units in the monotone
+    transformer, controlling the expressiveness of the conditional transform.
 
     Args:
         key: JAX random key.
         shape: Shape of the input (n_dims,).
-        n_components: Reserved for future use (deep sigmoid components). Defaults to 8.
+        n_components: Number of sigmoid components in the transformer. Defaults to 8.
         nn_width: Hidden layer width of the conditioner MLP. Defaults to 64.
         nn_depth: Depth of the conditioner MLP. Defaults to 2.
     """
@@ -183,11 +266,10 @@ class DeepSigmoidCoupling(AbstractBijection):
         n_dims = shape[0]
         self.shape = shape
 
-        # Affine transformer; n_components is reserved for a future deep sigmoid
-        affine = Affine()
+        transformer = _DeepSigmoidTransformer(n_components=n_components)
         self._coupling = Coupling(
             key=key,
-            transformer=affine,
+            transformer=transformer,
             untransformed_dim=n_dims // 2,
             dim=n_dims,
             nn_width=nn_width,

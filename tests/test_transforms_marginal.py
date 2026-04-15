@@ -1,9 +1,14 @@
 """Tests for marginal transforms."""
 
+from __future__ import annotations
+
+import jax
 import jax.numpy as jnp
 import jax.random as jr
+import jax.scipy.stats as jstats
 
 from gauss_flows import (
+    HistogramCDF,
     InverseGaussCDF,
     MixtureGaussianCDF,
     MixtureLogisticCDF,
@@ -75,3 +80,49 @@ def test_inverse_gauss_cdf_forward_inverse(key):
     u_rec, log_det_i = transform.inverse_and_log_det(y)
     assert jnp.allclose(u, u_rec, atol=1e-5)
     assert jnp.allclose(log_det_f + log_det_i, 0.0, atol=1e-5)
+
+
+def test_histogram_cdf_forward_inverse(key):
+    shape = (3,)
+    data = jr.normal(key, (5000, shape[0]))
+    transform = HistogramCDF(n_bins=64, shape=shape).fit(data)
+    x = jr.normal(key, shape)
+    y, log_det_f = transform.transform_and_log_det(x)
+    x_rec, log_det_i = transform.inverse_and_log_det(y)
+    assert jnp.allclose(x, x_rec, atol=1e-3)
+    assert jnp.allclose(log_det_f + log_det_i, 0.0, atol=1e-5)
+
+
+def test_histogram_cdf_matches_gaussian_cdf(key):
+    shape = (1,)
+    data = jr.normal(key, (20000, shape[0]))
+    transform = HistogramCDF(n_bins=256, shape=shape).fit(data)
+    points = jnp.linspace(-2.0, 2.0, 21)[:, None]
+
+    def _single_cdf(x_point):
+        y, _ = transform.transform_and_log_det(x_point)
+        return y[0]
+
+    cdf_vals = jax.vmap(_single_cdf)(points)
+    reference = jstats.norm.cdf(points[:, 0])
+    assert jnp.mean(jnp.abs(cdf_vals - reference)) < 0.02
+
+
+def test_histogram_cdf_idempotent_fit(key):
+    shape = (2,)
+    data = jr.normal(key, (1000, shape[0]))
+    transform = HistogramCDF(n_bins=32, shape=shape)
+    fitted_once = transform.fit(data)
+    fitted_twice = fitted_once.fit(data)
+    assert jnp.allclose(fitted_once.bin_edges, fitted_twice.bin_edges)
+    assert jnp.allclose(fitted_once.bin_pdf, fitted_twice.bin_pdf)
+
+
+def test_histogram_cdf_out_of_range():
+    shape = (1,)
+    transform = HistogramCDF(n_bins=8, shape=shape)
+    data = jnp.linspace(-1.0, 1.0, 32).reshape(-1, 1)
+    fitted = transform.fit(data)
+    y, log_det = fitted.transform_and_log_det(jnp.array([-5.0]))
+    assert jnp.allclose(y, jnp.array([0.0]))
+    assert log_det == -jnp.inf

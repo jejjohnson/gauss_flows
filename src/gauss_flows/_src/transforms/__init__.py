@@ -17,6 +17,7 @@ from gauss_flows._src.transforms.coupling import (
     RQSplineCoupling,
 )
 from gauss_flows._src.transforms.marginal import (
+    HistogramCDF,
     InverseGaussCDF,
     MixtureGaussianCDF,
     MixtureLogisticCDF,
@@ -46,6 +47,7 @@ __all__ = [
     "DeepSigmoidCoupling",
     "FixedRotation",
     "HaarWavelet",
+    "HistogramCDF",
     "HouseholderRotation",
     "InverseGaussCDF",
     "Invertible1x1Conv",
