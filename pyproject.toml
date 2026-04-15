@@ -31,6 +31,8 @@ dependencies = [
     "paramax",
     "jaxtyping",
     "einops>=0.8.2",
+    "optimistix>=0.0.9",
+    "interpax>=0.3.13",
 ]
 
 [project.urls]
