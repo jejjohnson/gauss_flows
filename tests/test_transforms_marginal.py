@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import equinox as eqx
+import interpax
 import jax
 import jax.numpy as jnp
 import jax.random as jr
@@ -151,3 +153,52 @@ def test_histogram_cdf_boundary_log_det_consistent():
     # Inverse at y > 1: truly out of range, log_det is -inf.
     _, log_det_i_above = fitted.inverse_and_log_det(jnp.array([1.5]))
     assert log_det_i_above == -jnp.inf
+
+
+def test_histogram_cdf_monotonic_roundtrip(key):
+    """PCHIP-backed HistogramCDF roundtrips x → y → x within smooth-interp
+    tolerance. Unlike the linear method, forward and inverse are independent
+    monotone-cubic fits on swapped axes, so roundtrip is approximate."""
+    shape = (3,)
+    data = jr.normal(key, (5000, shape[0]))
+    transform = HistogramCDF(n_bins=64, shape=shape, method="monotonic").fit(data)
+    x = jr.normal(key, shape) * 0.5
+    y, log_det_f = transform.transform_and_log_det(x)
+    x_rec, log_det_i = transform.inverse_and_log_det(y)
+    assert y.shape == shape
+    assert jnp.all((y >= 0.0) & (y <= 1.0))
+    # Smooth interpolators: roundtrip ≤ 1e-3, log-det sum ≤ 1e-3.
+    assert jnp.allclose(x, x_rec, atol=1e-3)
+    assert jnp.allclose(log_det_f + log_det_i, 0.0, atol=1e-3)
+
+
+def test_histogram_cdf_grad_through_knots(key):
+    """``jax.grad`` flows through the fitted CDF knot values (``cdf_edges``).
+    Enables future trainable-CDF variants (e.g. fine-tuning from a histogram
+    initialisation)."""
+    shape = (2,)
+    data = jr.normal(key, (1000, shape[0]))
+    fitted = HistogramCDF(n_bins=16, shape=shape).fit(data)
+    x = jnp.array([0.0, 0.1])
+
+    def loss(cdf_nodes):
+        # Re-build a fitted HistogramCDF with perturbed CDF knots while
+        # keeping the rest of the structure fixed.
+        method = fitted.method
+
+        def _make_fwd(e, c):
+            return interpax.Interpolator1D(e, c, method=method, extrap=(0.0, 1.0))
+
+        new_fwd = eqx.filter_vmap(_make_fwd)(fitted.bin_edges, cdf_nodes)
+        perturbed = eqx.tree_at(
+            lambda t: (t.cdf_edges, t.fwd_interp), fitted, (cdf_nodes, new_fwd)
+        )
+        y, _ = perturbed.transform_and_log_det(x)
+        return jnp.sum(y**2)
+
+    g = jax.grad(loss)(fitted.cdf_edges)
+    assert g.shape == fitted.cdf_edges.shape
+    assert jnp.all(jnp.isfinite(g))
+    # Gradient should be nonzero — perturbing the CDF knots must change the
+    # forward output.
+    assert jnp.any(jnp.abs(g) > 0)
