@@ -369,6 +369,10 @@ class HistogramCDF(AbstractBijection):
         def _inverse(y_i, edges_i, pdf_i, cdf_i):
             # y_i: scalar in [0, 1] (clipped); searchsorted on the CDF
             # gives the bin containing y, then we invert the linear interp.
+            # Strict `<` / `>` for the outside check: exact boundaries
+            # ``y == 0`` / ``y == 1`` map to ``edges[0]`` / ``edges[-1]`` and
+            # carry a finite log_det, consistent with forward_and_log_det
+            # which treats ``x == edges[0]`` / ``x == edges[-1]`` as inside.
             y_clipped = jnp.clip(y_i, 0.0, 1.0)
             idx = jnp.clip(
                 jnp.searchsorted(cdf_i, y_clipped, side="right") - 1,
@@ -379,9 +383,9 @@ class HistogramCDF(AbstractBijection):
             density = pdf_i[idx]
             left = edges_i[idx]
             x_i = left + (y_clipped - cdf_left) / density
-            outside = (y_i <= 0.0) | (y_i >= 1.0)
-            x_i = jnp.where(y_i <= 0.0, edges_i[0], x_i)
-            x_i = jnp.where(y_i >= 1.0, edges_i[-1], x_i)
+            outside = (y_i < 0.0) | (y_i > 1.0)
+            x_i = jnp.where(y_i < 0.0, edges_i[0], x_i)
+            x_i = jnp.where(y_i > 1.0, edges_i[-1], x_i)
             log_det = jnp.where(outside, -jnp.inf, -jnp.log(density))
             return x_i, log_det
 

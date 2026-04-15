@@ -10,15 +10,18 @@ from typing import ClassVar
 
 import equinox as eqx
 import jax.numpy as jnp
+import optimistix as optx
+import paramax
 from flowjax.bijections import (
     AbstractBijection,
     Coupling,
     RationalQuadraticSpline,
 )
 from flowjax.bijections.affine import Affine
-from jax import Array, lax
+from jax import Array
 from jax.nn import sigmoid, softplus
 from jaxtyping import ArrayLike, PRNGKeyArray
+from paramax.utils import inv_softplus
 
 
 class ActNorm1D(AbstractBijection):
@@ -154,106 +157,111 @@ class RQSplineCoupling(AbstractBijection):
         return self._coupling.inverse_and_log_det(jnp.asarray(y), condition)
 
 
+def _softplus_plus_floor(t: Array) -> Array:
+    """Positive constraint: softplus(t) + 1e-4. Used by paramax.Parameterize."""
+    return softplus(t) + 1e-4
+
+
 class _DeepSigmoidTransformer(AbstractBijection):
     """Monotone single-layer sigmoidal transformer for a single dimension.
 
     Implements the per-dim transformer
 
-        y    = base_scale·x + bias + Σᵢ amplitudesᵢ · σ(slopesᵢ·x + shiftsᵢ)
+        y     = base_scale·x + bias + Σᵢ amplitudesᵢ · σ(slopesᵢ·x + shiftsᵢ)
         dy/dx = base_scale + Σᵢ amplitudesᵢ · slopesᵢ · σ(·) · (1 − σ(·))
 
-    with ``base_scale``, ``amplitudes``, ``slopes`` constrained positive
-    (softplus + 1e-4) so ``dy/dx > 0`` everywhere → strictly monotone, hence
-    invertible. Matches the *single-layer* sigmoid flow of Huang et al.
-    (2018) NAF, §3.2; it is **not** the stacked DDSF ("deep dense sigmoid
-    flow") variant from the same paper. Single-layer DSF has limited
-    expressiveness for multi-modal targets and the loss surface tends to
-    have a strong attractor at the affine local minimum (see PR #45).
+    with ``base_scale``, ``amplitudes``, ``slopes`` constrained strictly
+    positive via :class:`paramax.Parameterize` wrapping ``softplus + 1e-4``
+    (mirrors the flowjax convention in ``RQSpline``, ``StudentT``, etc.).
+    ``dy/dx > 0`` everywhere → strictly monotone, hence invertible. Matches
+    the *single-layer* sigmoid flow of Huang et al. (2018) NAF, §3.2; it
+    is **not** the stacked DDSF ("deep dense sigmoid flow") variant from
+    the same paper. Single-layer DSF has limited expressiveness for
+    multi-modal targets and the loss surface tends to have a strong
+    attractor at the affine local minimum (see PR #45).
+
+    The inverse solves ``y = _forward(x)`` via :func:`optimistix.root_find`
+    with :class:`optimistix.Bisection` — this gives ``expand_if_necessary``
+    bracket growth and proper convergence handling, replacing the previous
+    hand-rolled fori_loop bisection.
     """
 
     n_components: int = eqx.field(static=True)
     shape: tuple[int, ...]
     cond_shape: ClassVar[None] = None
     bias: Array
-    log_base_scale: Array
-    log_amplitudes: Array
-    log_slopes: Array
+    # base_scale, amplitudes, slopes are stored as paramax.Parameterize
+    # wrappers in __init__ and unwrapped to plain Array at runtime via
+    # ``paramax.unwrap(self)``. We annotate them as ``Array`` for the type
+    # checker (matching their runtime behaviour in _forward); flowjax uses
+    # the same pragmatic convention.
+    base_scale: Array
+    amplitudes: Array
+    slopes: Array
     shifts: Array
 
     def __init__(self, n_components: int):
-        # All-zero defaults are just shape declarations: the parent
-        # `Coupling` overrides every leaf at runtime with the conditioner's
-        # output, so these values are never used after construction.
+        # The init values are just shape/structure declarations: the parent
+        # ``Coupling`` rebuilds this transformer with conditioner-supplied
+        # leaf values at every forward pass, so these defaults never reach
+        # the user.
         self.n_components = n_components
         self.shape = ()
         self.bias = jnp.array(0.0)
-        self.log_base_scale = jnp.array(0.0)
-        self.log_amplitudes = jnp.zeros((n_components,))
-        self.log_slopes = jnp.zeros((n_components,))
+        # Raw value r such that softplus(r) + 1e-4 ≈ 1 → init positives to 1.
+        raw_for_one = jnp.asarray(inv_softplus(1.0 - 1e-4))
+        self.base_scale = paramax.Parameterize(_softplus_plus_floor, raw_for_one)
+        self.amplitudes = paramax.Parameterize(
+            _softplus_plus_floor, jnp.full((n_components,), raw_for_one)
+        )
+        self.slopes = paramax.Parameterize(
+            _softplus_plus_floor, jnp.full((n_components,), raw_for_one)
+        )
         self.shifts = jnp.zeros((n_components,))
 
-    def _parameters(self):
-        # Positive constraint via softplus + small floor for numerical safety.
-        base_scale = softplus(self.log_base_scale) + 1e-4
-        amplitudes = softplus(self.log_amplitudes) + 1e-4
-        slopes = softplus(self.log_slopes) + 1e-4
-        return base_scale, amplitudes, slopes
-
     def _forward(self, x: Array):
+        """Evaluate y and dy/dx. Assumes ``self`` is already paramax-unwrapped."""
         # x: scalar -> y: scalar, dy/dx: scalar.
-        base_scale, amplitudes, slopes = self._parameters()
-        preactivations = slopes * x + self.shifts  # (n_components,)
+        preactivations = self.slopes * x + self.shifts  # (n_components,)
         sig = sigmoid(preactivations)  # (n_components,)
-        y = base_scale * x + self.bias + jnp.sum(amplitudes * sig, axis=-1)
-        dy_dx = base_scale + jnp.sum(amplitudes * slopes * sig * (1.0 - sig), axis=-1)
+        y = self.base_scale * x + self.bias + jnp.sum(self.amplitudes * sig, axis=-1)
+        dy_dx = self.base_scale + jnp.sum(
+            self.amplitudes * self.slopes * sig * (1.0 - sig), axis=-1
+        )
         return y, dy_dx
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
+        self = paramax.unwrap(self)
         y, dy_dx = self._forward(jnp.asarray(x))
         log_det = jnp.log(dy_dx)
         return y, log_det
 
     def inverse_and_log_det(self, y: ArrayLike, condition=None):
-        # Solve y = self._forward(x) for x by bracketed bisection. We use a
-        # geometric expansion to bracket the root from a linear-approx seed,
-        # then 50 bisections for ~1e-12 resolution.
+        # Solve y = self._forward(x) for x via optimistix Bisection. This
+        # delegates bracket expansion + convergence checks to the library,
+        # replacing the prior hand-rolled fori_loop bisection.
+        self = paramax.unwrap(self)
         y = jnp.asarray(y)
-        base_scale, amplitudes, _ = self._parameters()
-        approx_center = (y - self.bias - 0.5 * jnp.sum(amplitudes)) / base_scale
-        # Initial half-width: 10 covers ~3 std for N(0,1) inputs.
-        lo = approx_center - 10.0
-        hi = approx_center + 10.0
+        # Affine-approx seed: y ≈ base_scale·x + bias + 0.5·Σ amplitudes.
+        approx_center = (
+            y - self.bias - 0.5 * jnp.sum(self.amplitudes)
+        ) / self.base_scale
 
-        def _maybe_expand(_i, bounds):
-            # Geometric: each non-bracketing iter doubles the bracket. With 20
-            # iters of 2x growth from width-20, max bracket width is ~20·2²⁰ ≈
-            # 2·10⁷ — handles any reasonable y. Two forward evals per iter.
-            lo_val, hi_val = bounds
-            y_lo, _ = self._forward(lo_val)
-            y_hi, _ = self._forward(hi_val)
-            half = 0.5 * (hi_val - lo_val)
-            expand_down = y_lo > y
-            expand_up = y_hi < y
-            return (
-                jnp.where(expand_down, lo_val - 2.0 * half, lo_val),
-                jnp.where(expand_up, hi_val + 2.0 * half, hi_val),
-            )
+        def fn(x, args_y):
+            # fn(x) = f(x) - y_target; root where f(x) == y_target.
+            return self._forward(x)[0] - args_y
 
-        lo, hi = lax.fori_loop(0, 20, _maybe_expand, (lo, hi))
-
-        def _bisect(_i, bounds):
-            # bounds: (lo, hi) each shape ()
-            lo_val, hi_val = bounds
-            mid = 0.5 * (lo_val + hi_val)
-            y_mid, _ = self._forward(mid)
-            go_up = y_mid < y
-            return (
-                jnp.where(go_up, mid, lo_val),
-                jnp.where(go_up, hi_val, mid),
-            )
-
-        lo, hi = lax.fori_loop(0, 50, _bisect, (lo, hi))
-        x = 0.5 * (lo + hi)
+        solver = optx.Bisection(rtol=1e-6, atol=1e-6, expand_if_necessary=True)
+        sol = optx.root_find(
+            fn,
+            solver,
+            y0=approx_center,
+            args=y,
+            options={"lower": approx_center - 1.0, "upper": approx_center + 1.0},
+            max_steps=100,
+            throw=False,
+        )
+        x = sol.value
         _, dy_dx = self._forward(x)
         log_det = -jnp.log(dy_dx)
         return x, log_det

@@ -126,3 +126,28 @@ def test_histogram_cdf_out_of_range():
     y, log_det = fitted.transform_and_log_det(jnp.array([-5.0]))
     assert jnp.allclose(y, jnp.array([0.0]))
     assert log_det == -jnp.inf
+
+
+def test_histogram_cdf_boundary_log_det_consistent():
+    """``x == edges[0/−1]`` in forward and ``y == 0/1`` in inverse are both
+    in-range (finite log_det). ``y < 0`` or ``y > 1`` is still -inf."""
+    shape = (1,)
+    transform = HistogramCDF(n_bins=8, shape=shape)
+    data = jnp.linspace(-1.0, 1.0, 32).reshape(-1, 1)
+    fitted = transform.fit(data)
+
+    # Forward at left-most edge: inside, finite log_det.
+    _, log_det_f_left = fitted.transform_and_log_det(fitted.bin_edges[0, 0:1])
+    assert jnp.isfinite(log_det_f_left)
+
+    # Inverse at y == 0: also inside (boundary), finite log_det (strict < now).
+    _, log_det_i_zero = fitted.inverse_and_log_det(jnp.array([0.0]))
+    assert jnp.isfinite(log_det_i_zero)
+
+    # Inverse at y == 1: same — finite log_det.
+    _, log_det_i_one = fitted.inverse_and_log_det(jnp.array([1.0]))
+    assert jnp.isfinite(log_det_i_one)
+
+    # Inverse at y > 1: truly out of range, log_det is -inf.
+    _, log_det_i_above = fitted.inverse_and_log_det(jnp.array([1.5]))
+    assert log_det_i_above == -jnp.inf
