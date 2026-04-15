@@ -334,9 +334,14 @@ class SurVAEFlow(eqx.Module):
 
         event_shape = self.base_dist.shape
         n_event = len(event_shape)
-        if n_event > 0 and x.shape[-n_event:] != event_shape:
+        data_event_shape = () if n_event == 0 else x.shape[-n_event:]
+        if (
+            n_event > 0
+            and data_event_shape != event_shape
+            and not any(isinstance(t, AbstractSurjection) for t in self.transforms)
+        ):
             raise ValueError(
-                f"x trailing shape {x.shape[-n_event:]} does not match "
+                f"x trailing shape {data_event_shape} does not match "
                 f"base_dist.shape {event_shape}."
             )
         sample_shape = x.shape if n_event == 0 else x.shape[:-n_event]
@@ -347,7 +352,7 @@ class SurVAEFlow(eqx.Module):
         n = 1
         for s in sample_shape:
             n *= s
-        flat = x.reshape((n, *event_shape))
+        flat = x.reshape((n, *data_event_shape))
         keys = jr.split(key, n)
         out = jax.vmap(lambda xi, ki: self._single_log_prob(xi, ki, cond))(flat, keys)
         return out.reshape(sample_shape)

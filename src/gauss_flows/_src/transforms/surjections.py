@@ -1,10 +1,11 @@
-"""Simple SurVAE surjections without neural encoders/decoders.
+"""SurVAE surjections — many-to-one and one-to-many transforms.
 
 A "surjection" in the SurVAE hierarchy (Nielsen et al. 2020) is a
 many-to-one map: deterministic in one direction, stochastic in the other.
-The transforms in this module are the four "pure shape math" surjections
-that need no learned encoder/decoder beyond a fixed conditional
-distribution:
+This module ships two families:
+
+**Simple surjections** — pure shape math, no learned encoder/decoder beyond
+an optional fixed conditional distribution:
 
     +-------------------------------+----------+----------+--------------------+
     | Class                         | forward  | inverse  | log_det per event  |
@@ -19,6 +20,21 @@ inverse): the forward direction is the one used by ``log_prob``, and the
 inverse only needs to sample plausible pre-images from a uniform prior over
 the collapsed equivalence class. The log-det contribution is the entropy of
 that uniform prior — exact, not a bound.
+
+**Encoder/decoder surjections** — change event dimensionality, take a
+conditional distribution as a constructor argument:
+
+    +---------------------+----------+----------+--------------------------+
+    | Class               | forward  | inverse  | log_det per event        |
+    +=====================+==========+==========+==========================+
+    | :class:`Slice`      | det.     | random   | log q(dropped | kept)    |
+    | :class:`Augment`    | random   | det.     | -log q(z_aug | x)        |
+    +---------------------+----------+----------+--------------------------+
+
+``Slice`` is an inference surjection (data → latent): it drops trailing dims
+and scores them under a decoder. ``Augment`` is a generative surjection
+(latent → data direction is the deterministic one): it samples extra
+dimensions from an encoder, contributing a lower-bound term to ``log_prob``.
 
 References:
     Nielsen et al. (2020), *SurVAE Flows*, NeurIPS.
@@ -450,8 +466,138 @@ class SimpleMaxPoolSurjection2d(AbstractSurjection):
         return x, log_det
 
 
+class Slice(AbstractSurjection):
+    """Inference surjection that drops trailing dimensions.
+
+    ``forward`` keeps the first ``keep_dims`` dims, scores the dropped tail under
+    ``decoder`` conditioned on the kept prefix, and returns the kept dims plus the
+    decoder log-density. ``inverse`` samples the dropped tail from ``decoder`` given
+    the kept dims and concatenates it back.
+    """
+
+    stochastic_forward: ClassVar[bool] = False
+    stochastic_inverse: ClassVar[bool] = True
+    lower_bound: ClassVar[bool] = False
+    keep_dims: int
+    decoder: ConditionalDistribution
+
+    def __init__(self, keep_dims: int, decoder: ConditionalDistribution):
+        if keep_dims <= 0:
+            raise ValueError("keep_dims must be positive.")
+        if not isinstance(decoder, ConditionalDistribution):
+            raise TypeError(
+                "decoder must satisfy the ConditionalDistribution protocol."
+            )
+        self.keep_dims = keep_dims
+        self.decoder = decoder
+
+    def forward_and_log_det(
+        self,
+        x: ArrayLike,
+        key: PRNGKeyArray,
+        cond: Array | None = None,
+    ) -> tuple[Array, Array]:
+        del key, cond
+        x_arr = jnp.asarray(x)
+        if x_arr.shape[-1] < self.keep_dims:
+            raise ValueError(
+                "Input trailing dimension "
+                f"{x_arr.shape[-1]} is smaller than keep_dims={self.keep_dims}."
+            )
+        kept = x_arr[..., : self.keep_dims]
+        dropped = x_arr[..., self.keep_dims :]
+        log_det = self.decoder.log_prob(dropped, condition=kept)
+        return kept, log_det
+
+    def inverse_and_log_det(
+        self,
+        z: ArrayLike,
+        key: PRNGKeyArray,
+        cond: Array | None = None,
+    ) -> tuple[Array, Array]:
+        del cond
+        z_arr = jnp.asarray(z)
+        if z_arr.shape[-1] != self.keep_dims:
+            raise ValueError(
+                "Input trailing dimension "
+                f"{z_arr.shape[-1]} does not match keep_dims={self.keep_dims}."
+            )
+        dropped = self.decoder.sample(key, condition=z_arr)
+        x = jnp.concatenate([z_arr, dropped], axis=-1)
+        return x, jnp.zeros(())
+
+
+class Augment(AbstractSurjection):
+    """Generative surjection that adds conditionally sampled dimensions.
+
+    ``forward`` draws ``augment_size`` dims from ``encoder`` conditioned on the
+    input, concatenates them, and contributes ``-encoder.log_prob`` so
+    ``log_prob`` accounts for the encoder likelihood. ``inverse`` drops the
+    augmented tail.
+    """
+
+    stochastic_forward: ClassVar[bool] = True
+    stochastic_inverse: ClassVar[bool] = False
+    lower_bound: ClassVar[bool] = True
+    encoder: ConditionalDistribution
+    x_size: int
+    augment_size: int
+
+    def __init__(
+        self, encoder: ConditionalDistribution, x_size: int, augment_size: int
+    ):
+        if x_size <= 0:
+            raise ValueError("x_size must be positive.")
+        if augment_size <= 0:
+            raise ValueError("augment_size must be positive.")
+        if not isinstance(encoder, ConditionalDistribution):
+            raise TypeError(
+                "encoder must satisfy the ConditionalDistribution protocol."
+            )
+        self.encoder = encoder
+        self.x_size = x_size
+        self.augment_size = augment_size
+
+    def forward_and_log_det(
+        self,
+        x: ArrayLike,
+        key: PRNGKeyArray,
+        cond: Array | None = None,
+    ) -> tuple[Array, Array]:
+        del cond
+        x_arr = jnp.asarray(x)
+        if x_arr.shape[-1] != self.x_size:
+            raise ValueError(
+                "Input trailing dimension "
+                f"{x_arr.shape[-1]} does not match x_size={self.x_size}."
+            )
+        z2 = self.encoder.sample(key, condition=x_arr)
+        log_det = -self.encoder.log_prob(z2, condition=x_arr)
+        z = jnp.concatenate([x_arr, z2], axis=-1)
+        return z, log_det
+
+    def inverse_and_log_det(
+        self,
+        z: ArrayLike,
+        key: PRNGKeyArray,
+        cond: Array | None = None,
+    ) -> tuple[Array, Array]:
+        del key, cond
+        z_arr = jnp.asarray(z)
+        expected = self.x_size + self.augment_size
+        if z_arr.shape[-1] != expected:
+            raise ValueError(
+                "Input trailing dimension "
+                f"{z_arr.shape[-1]} does not match expected {expected}."
+            )
+        x = z_arr[..., : self.x_size]
+        return x, jnp.zeros(())
+
+
 __all__ = [
+    "Augment",
     "SimpleAbsSurjection",
     "SimpleMaxPoolSurjection2d",
     "SimpleSortSurjection",
+    "Slice",
 ]

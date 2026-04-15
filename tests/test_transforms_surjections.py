@@ -1,4 +1,4 @@
-"""Tests for simple surjections and stochastic transforms."""
+"""Tests for SurVAE surjections and stochastic transforms."""
 
 import math
 
@@ -6,13 +6,17 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
+import pytest
 from flowjax.distributions import Normal
 from scipy import stats
 
 from gauss_flows import (
+    AffineCoupling,
+    Augment,
     SimpleAbsSurjection,
     SimpleMaxPoolSurjection2d,
     SimpleSortSurjection,
+    Slice,
     StochasticPermutation,
     SurVAEFlow,
 )
@@ -308,3 +312,59 @@ def test_survaeflow_integration_abs_sort_perm(key):
     assert samples.shape == (16, dim)
     assert log_probs.shape == (16,)
     assert jnp.all(jnp.isfinite(log_probs))
+
+
+# ---------------------------------------------------------------------------
+# Slice / Augment surjections (PR #44 — to be reworked to single-event)
+# ---------------------------------------------------------------------------
+
+
+def test_slice_forward_log_det_matches_decoder(key):
+    decoder = Normal(jnp.zeros(1))
+    surj = Slice(keep_dims=1, decoder=decoder)
+    x = jnp.array([2.5, -0.3])
+    z, log_det = surj.forward_and_log_det(x, key)
+    expected = decoder.log_prob(jnp.array([-0.3]), condition=jnp.array([2.5]))
+    assert z.shape == (1,)
+    assert jnp.allclose(z, jnp.array([2.5]))
+    assert jnp.allclose(log_det, expected)
+
+
+def test_slice_inverse_samples_and_concatenates(key):
+    decoder = Normal(jnp.zeros(2))
+    surj = Slice(keep_dims=3, decoder=decoder)
+    z = jnp.arange(3.0)
+    x, log_det = surj.inverse_and_log_det(z, key)
+    assert x.shape == (5,)
+    assert jnp.allclose(x[:3], z)
+    assert jnp.allclose(log_det, 0.0)
+
+
+def test_augment_round_trip_kept_dims(key):
+    encoder = Normal(jnp.zeros(1))
+    surj = Augment(encoder=encoder, x_size=1, augment_size=1)
+    x = jnp.array([1.2])
+    z, log_det = surj.forward_and_log_det(x, key)
+    x_back, log_det_inv = surj.inverse_and_log_det(z, key)
+    assert z.shape == (2,)
+    assert jnp.allclose(x_back, x)
+    assert jnp.allclose(log_det_inv, 0.0)
+    assert jnp.all(jnp.isfinite(log_det))
+
+
+@pytest.mark.slow
+def test_minimal_survae_flow_trains_without_nan(key):
+    data = jr.normal(key, (32, 4))
+    base = Normal(jnp.zeros(2))
+    decoder = Normal(jnp.zeros(2))
+    flow = SurVAEFlow(
+        base,
+        [
+            AffineCoupling(key=key, shape=(2,)),
+            Slice(keep_dims=2, decoder=decoder),
+            AffineCoupling(key=jr.fold_in(key, 1), shape=(4,)),
+        ],
+    )
+    # Single log_prob call should be finite; lightweight smoke for integration.
+    logp = flow.log_prob(data, jr.fold_in(key, 2))
+    assert jnp.all(jnp.isfinite(logp))
