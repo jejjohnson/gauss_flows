@@ -105,7 +105,7 @@ rotation = HouseholderRotation(n_reflections=10, shape=(10,))
 # Coupling layers
 affine = AffineCoupling(key, shape=(10,))
 spline = RQSplineCoupling(key, shape=(10,), n_bins=8)
-circular = CircularRQSplineCoupling(key, shape=(10,), periodic_dims=(0, 1))
+circular = CircularRQSplineCoupling(key, shape=(10,))  # all dims periodic
 
 # Periodic utilities
 wrap = PeriodicWrap(ind=(0,), shape=(10,))

@@ -29,9 +29,6 @@ from flowjax.train import fit_to_data
 from gauss_flows import CircularRQSplineCoupling
 
 
-plt.switch_backend("Agg")
-
-
 def style_ax(ax):
     ax.grid(True, which="major", alpha=0.3)
     ax.grid(True, which="minor", alpha=0.1)
@@ -76,7 +73,6 @@ for layer_key in layer_keys:
         CircularRQSplineCoupling(
             bij_key,
             shape=(2,),
-            periodic_dims=(0, 1),
             n_bins=12,
             nn_width=64,
             nn_depth=1,

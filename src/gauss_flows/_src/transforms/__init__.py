@@ -26,6 +26,7 @@ from gauss_flows._src.transforms.marginal import (
     RQSplineMarginal,
 )
 from gauss_flows._src.transforms.periodic import (
+    CircularRationalQuadraticSpline,
     CircularRQSplineCoupling,
     PeriodicShift,
     PeriodicWrap,
@@ -43,6 +44,7 @@ __all__ = [
     "ActNorm1D",
     "AffineCoupling",
     "CircularRQSplineCoupling",
+    "CircularRationalQuadraticSpline",
     "DeepSigmoidCoupling",
     "FixedRotation",
     "HaarWavelet",
