@@ -90,6 +90,9 @@ from gauss_flows import (
     MixtureGaussianCDF,
     HouseholderRotation,
     AffineCoupling,
+    CircularRQSplineCoupling,
+    PeriodicShift,
+    PeriodicWrap,
     RQSplineCoupling,
 )
 
@@ -102,6 +105,11 @@ rotation = HouseholderRotation(n_reflections=10, shape=(10,))
 # Coupling layers
 affine = AffineCoupling(key, shape=(10,))
 spline = RQSplineCoupling(key, shape=(10,), n_bins=8)
+circular = CircularRQSplineCoupling(key, shape=(10,), periodic_dims=(0, 1))
+
+# Periodic utilities
+wrap = PeriodicWrap(ind=(0,), shape=(10,))
+shift = PeriodicShift(ind=(0,), shape=(10,))
 ```
 
 ## Development

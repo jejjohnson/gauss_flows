@@ -25,6 +25,11 @@ from gauss_flows._src.transforms.marginal import (
     MixtureLogisticCDF,
     RQSplineMarginal,
 )
+from gauss_flows._src.transforms.periodic import (
+    CircularRQSplineCoupling,
+    PeriodicShift,
+    PeriodicWrap,
+)
 from gauss_flows._src.transforms.rotation import (
     FixedRotation,
     HouseholderRotation,
@@ -37,6 +42,7 @@ __all__ = [
     "ActNorm",
     "ActNorm1D",
     "AffineCoupling",
+    "CircularRQSplineCoupling",
     "DeepSigmoidCoupling",
     "FixedRotation",
     "HaarWavelet",
@@ -47,6 +53,8 @@ __all__ = [
     "MixtureGaussianCDF",
     "MixtureLogisticCDF",
     "OrthogonalRotation",
+    "PeriodicShift",
+    "PeriodicWrap",
     "PlanarFlow",
     "RQSplineCoupling",
     "RQSplineMarginal",
