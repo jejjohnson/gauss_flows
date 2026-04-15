@@ -416,6 +416,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
+    { name = "scipy" },
 ]
 docs = [
     { name = "ipykernel" },
@@ -451,6 +452,7 @@ dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-xdist", specifier = ">=3.5.0" },
+    { name = "scipy", specifier = ">=1.13" },
 ]
 docs = [
     { name = "ipykernel", specifier = ">=6.29" },

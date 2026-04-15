@@ -260,6 +260,24 @@ def test_simple_maxpool_inverse_recovers_x_with_replay_decoder(key):
     assert jnp.allclose(x_rec, x)
 
 
+def test_simple_maxpool_forward_jit_and_vmap_compatible(key):
+    """Regression: forward must trace under jit and vmap (no boolean masking)."""
+    decoder = _ZeroDecoder((2, 2, 1, 3))
+    surj = SimpleMaxPoolSurjection2d((4, 4, 1), decoder)
+    forward = jax.jit(lambda x, k: surj.forward_and_log_det(x, k))
+
+    x = jr.normal(key, (4, 4, 1))
+    z_jit, log_det_jit = forward(x, jr.fold_in(key, 1))
+    assert z_jit.shape == (2, 2, 1)
+    assert log_det_jit.shape == ()
+
+    xs = jr.normal(jr.fold_in(key, 2), (8, 4, 4, 1))
+    keys = jr.split(jr.fold_in(key, 3), 8)
+    zs, log_dets = jax.vmap(forward)(xs, keys)
+    assert zs.shape == (8, 2, 2, 1)
+    assert log_dets.shape == (8,)
+
+
 def test_simple_maxpool_rejects_bad_shape():
     decoder = _ZeroDecoder((2, 2, 1, 3))
     try:

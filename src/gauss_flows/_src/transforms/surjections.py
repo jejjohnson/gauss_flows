@@ -218,14 +218,12 @@ class SimpleMaxPoolSurjection2d(AbstractSurjection):
         xs = self._squeeze(x)
         z = xs.max(axis=-1)
         k = jnp.argmax(xs, axis=-1)
-        mask = jax.nn.one_hot(k, self._pool_area, dtype=bool)
-        residuals = rearrange(
-            xs[~mask],
-            "(h w c p) -> h w c p",
-            h=z.shape[0],
-            w=z.shape[1],
-            c=z.shape[2],
-        )
+        # Static gather of the (pool_area - 1) non-argmax positions per pool —
+        # boolean masking on a runtime mask isn't traceable under jit/vmap
+        # (NonConcreteBooleanIndexError).
+        idx = jnp.arange(self._pool_area - 1)
+        gather_idx = jnp.where(idx < k[..., None], idx, idx + 1)
+        residuals = jnp.take_along_axis(xs, gather_idx, axis=-1)
         x_residuals = z[..., None] - residuals
         return z, x_residuals, k
 
