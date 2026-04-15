@@ -28,6 +28,14 @@ applyTo: "src/**/*.py,tests/**/*.py,scripts/**/*.py"
 - Use `eqx.filter_vmap` to create layer stacks; compose with FlowJax `Scan`
 - Pure functions where possible; side effects isolated and explicit
 - Use `einops` for non-trivial reshape/einsum operations
+- **Transform methods operate on a single event, not batches.** The abstract methods
+  (`transform_and_log_det`, `inverse_and_log_det`, `forward_and_log_det`) assume the
+  input has `shape == self.shape` and return a scalar `log_det`. Do **not** add
+  internal `vmap`/flatten/reshape machinery to support a leading batch axis — callers
+  vectorise explicitly with `jax.vmap` / `eqx.filter_vmap`, and the `SurVAEFlow`
+  container already vmaps `log_prob` / `sample` over any leading `sample_shape`. This
+  mirrors flowjax's `AbstractBijection` convention (it runtime-enforces
+  `x.shape == bijection.shape`).
 
 ## Documentation
 

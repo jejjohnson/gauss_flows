@@ -87,6 +87,7 @@ uv run --group typecheck ty check src/gauss_flows   # Typecheck — package only
 - Type hints on all public functions and methods
 - Pure functions where possible; side effects isolated and explicit
 - Surgical changes only — don't refactor adjacent code or add docstrings to unchanged code
+- **Transform methods operate on a single event, not batches.** `transform_and_log_det` / `forward_and_log_det` / `inverse_and_log_det` assume `x.shape == self.shape` and return a scalar `log_det`. Do **not** add internal `vmap`/flatten/reshape machinery to support a leading batch axis — callers vectorise with `jax.vmap` / `eqx.filter_vmap`, and the `SurVAEFlow` container already vmaps `log_prob` / `sample` over any leading `sample_shape`. Matches the flowjax `AbstractBijection` convention (runtime-enforces `x.shape == bijection.shape`).
 
 ## Documentation Examples
 
