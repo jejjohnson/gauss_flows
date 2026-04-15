@@ -338,7 +338,9 @@ def test_slice_inverse_samples_and_concatenates(key):
     x, log_det = surj.inverse_and_log_det(z, key)
     assert x.shape == (5,)
     assert jnp.allclose(x[:3], z)
-    assert jnp.allclose(log_det, 0.0)
+    # log_det mirrors forward: log q(dropped_sampled | z), not 0.
+    expected = decoder.log_prob(x[3:], condition=z)
+    assert jnp.allclose(log_det, expected)
 
 
 def test_slice_50d_to_100d_shape_handling(key):
@@ -356,7 +358,8 @@ def test_slice_50d_to_100d_shape_handling(key):
     x_back, log_det_inv = surj.inverse_and_log_det(z, jr.fold_in(key, 2))
     assert x_back.shape == (100,)
     assert jnp.allclose(x_back[:50], z)
-    assert jnp.allclose(log_det_inv, 0.0)
+    expected_inv = decoder.log_prob(x_back[50:], condition=z)
+    assert jnp.allclose(log_det_inv, expected_inv)
 
 
 def test_slice_jit_and_vmap_compatible(key):
@@ -415,6 +418,19 @@ def test_augment_jit_and_vmap_compatible(key):
     zs, log_dets = jax.vmap(forward)(xs, keys)
     assert zs.shape == (8, 4)
     assert log_dets.shape == (8,)
+
+
+def test_augment_shape_attribute_and_forward_validation(key):
+    """``shape`` mirrors ``(x_size,)``; forward rejects wrong-shape input."""
+    encoder = Normal(jnp.zeros(2))
+    surj = Augment(encoder=encoder, x_size=3, augment_size=2)
+    assert surj.shape == (3,)
+    # Correct shape: succeeds.
+    z, _ = surj.forward_and_log_det(jnp.zeros(3), key)
+    assert z.shape == (5,)
+    # Wrong shape: must raise (catches silent misuse).
+    with pytest.raises(ValueError, match=r"x\.shape == \(3,\)"):
+        surj.forward_and_log_det(jnp.zeros(4), key)
 
 
 # ---------------------------------------------------------------------------

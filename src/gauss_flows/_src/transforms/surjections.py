@@ -494,6 +494,13 @@ class Slice(AbstractSurjection):
         - Output ``z``:  ``(keep_dims,)``
         - ``log_det``:   scalar (shape ``()``)
 
+    Note:
+        Unlike most transforms, ``Slice`` does **not** expose a ``shape``
+        attribute. Its forward-input dim ``D`` is determined by whatever the
+        upstream transform produces — it is a chain-context property, not a
+        constructor parameter, so there is no fixed ``shape`` to declare. The
+        full data shape lives on :class:`SurVAEFlow.data_shape` instead.
+
     Example:
         Score the dropped tail under a unit Gaussian decoder:
 
@@ -553,13 +560,21 @@ class Slice(AbstractSurjection):
         key: PRNGKeyArray,
         cond: Array | None = None,
     ) -> tuple[Array, Array]:
-        """Sample the missing tail from the decoder; concat back."""
+        """Sample the missing tail from the decoder; concat back.
+
+        Returns ``log q(dropped_sampled | z)`` to mirror
+        ``forward_and_log_det`` and match :class:`SimpleMaxPoolSurjection2d`'s
+        inverse convention. ``SurVAEFlow.log_prob`` doesn't consume this value
+        (it only uses ``forward_and_log_det``); the consistent return shape is
+        for callers using the inverse standalone (e.g. ELBO computations).
+        """
         del cond
         z_arr = jnp.asarray(z)
         # dropped: (D - keep_dims,) sampled from decoder; x: (D,)
         dropped = self.decoder.sample(key, condition=z_arr)
         x = jnp.concatenate([z_arr, dropped])
-        return x, jnp.zeros(())
+        log_det = self.decoder.log_prob(dropped, condition=z_arr)
+        return x, log_det
 
 
 class Augment(AbstractSurjection):
@@ -584,8 +599,13 @@ class Augment(AbstractSurjection):
             ``sample(key, *, condition=x)`` must produce arrays of shape
             ``(augment_size,)`` and ``log_prob(value, *, condition=x)`` must
             return a scalar.
-        x_size: Size of the data input event.
+        x_size: Size of the data input event. Determines ``self.shape``.
         augment_size: Number of latent dims to append.
+
+    Attributes:
+        shape: ``(x_size,)`` — the forward-input event shape, matching the
+            project-wide ``x.shape == self.shape`` convention. ``forward``
+            runtime-validates this.
 
     Shape:
         - Input  ``x``:  ``(x_size,)``
@@ -621,6 +641,7 @@ class Augment(AbstractSurjection):
     stochastic_forward: ClassVar[bool] = True
     stochastic_inverse: ClassVar[bool] = False
     lower_bound: ClassVar[bool] = True
+    shape: tuple[int, ...]
     encoder: ConditionalDistribution
     x_size: int
     augment_size: int
@@ -635,6 +656,7 @@ class Augment(AbstractSurjection):
             raise ValueError("x_size must be positive.")
         if augment_size <= 0:
             raise ValueError("augment_size must be positive.")
+        self.shape = (x_size,)
         self.encoder = encoder
         self.x_size = x_size
         self.augment_size = augment_size
@@ -648,6 +670,10 @@ class Augment(AbstractSurjection):
         """Sample ``z_aug`` from encoder; ``z = concat([x, z_aug])``."""
         del cond
         x_arr = jnp.asarray(x)
+        if x_arr.shape != self.shape:
+            raise ValueError(
+                f"Augment.forward expected x.shape == {self.shape}; got {x_arr.shape}."
+            )
         # z_aug: (augment_size,); z: (x_size + augment_size,)
         z_aug = self.encoder.sample(key, condition=x_arr)
         log_det = -self.encoder.log_prob(z_aug, condition=x_arr)
