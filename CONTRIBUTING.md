@@ -8,7 +8,7 @@ See the full contributor guide at [docs/contributing.md](docs/contributing.md) f
 - Relationships syntax (`Parent:`, `Blocked by:`, `Blocks:`, `Related:`)
 - Pre-commit checklist and quality gates
 
-Bootstrap the standard label set for a fresh clone of this template:
+Bootstrap the standard label set for a fresh clone of this repo:
 
 ```bash
 make gh-labels
