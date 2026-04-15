@@ -1,10 +1,11 @@
-"""Simple SurVAE surjections without neural encoders/decoders.
+"""SurVAE surjections — many-to-one and one-to-many transforms.
 
 A "surjection" in the SurVAE hierarchy (Nielsen et al. 2020) is a
 many-to-one map: deterministic in one direction, stochastic in the other.
-The transforms in this module are the four "pure shape math" surjections
-that need no learned encoder/decoder beyond a fixed conditional
-distribution:
+This module ships two families:
+
+**Simple surjections** — pure shape math, no learned encoder/decoder beyond
+an optional fixed conditional distribution:
 
     +-------------------------------+----------+----------+--------------------+
     | Class                         | forward  | inverse  | log_det per event  |
@@ -19,6 +20,21 @@ inverse): the forward direction is the one used by ``log_prob``, and the
 inverse only needs to sample plausible pre-images from a uniform prior over
 the collapsed equivalence class. The log-det contribution is the entropy of
 that uniform prior — exact, not a bound.
+
+**Encoder/decoder surjections** — change event dimensionality, take a
+conditional distribution as a constructor argument:
+
+    +---------------------+----------+----------+--------------------------+
+    | Class               | forward  | inverse  | log_det per event        |
+    +=====================+==========+==========+==========================+
+    | :class:`Slice`      | det.     | random   | log q(dropped | kept)    |
+    | :class:`Augment`    | random   | det.     | -log q(z_aug | x)        |
+    +---------------------+----------+----------+--------------------------+
+
+``Slice`` is an inference surjection (data → latent): it drops trailing dims
+and scores them under a decoder. ``Augment`` is a generative surjection
+(latent → data direction is the deterministic one): it samples extra
+dimensions from an encoder, contributing a lower-bound term to ``log_prob``.
 
 References:
     Nielsen et al. (2020), *SurVAE Flows*, NeurIPS.
@@ -450,8 +466,238 @@ class SimpleMaxPoolSurjection2d(AbstractSurjection):
         return x, log_det
 
 
+class Slice(AbstractSurjection):
+    """Inference surjection that drops the trailing dimensions of a 1D event.
+
+    Forward keeps the first ``keep_dims`` entries of ``x`` and scores the dropped
+    tail under ``decoder`` conditioned on the kept prefix:
+
+        forward:  z = x[:keep_dims]                  (deterministic)
+                  log_det = log q(x[keep_dims:] | z)
+
+        inverse:  dropped ~ q(· | z)                 (decoder sample)
+                  x = concat([z, dropped])
+
+    The forward log-det contribution is exact when the decoder ``q`` matches the
+    true conditional density of the dropped dims given the kept dims; otherwise
+    it is a (typically loose) lower bound on ``log p(x)``.
+
+    Args:
+        keep_dims: Number of leading entries to keep. Must be positive.
+        decoder: Object satisfying :class:`ConditionalDistribution` —
+            ``sample(key, *, condition=z)`` must produce arrays of shape
+            ``(D − keep_dims,)`` for the dropped tail and
+            ``log_prob(value, *, condition=z)`` must return a scalar.
+
+    Shape:
+        - Input  ``x``:  ``(D,)`` (with ``D > keep_dims``)
+        - Output ``z``:  ``(keep_dims,)``
+        - ``log_det``:   scalar (shape ``()``)
+
+    Note:
+        Unlike most transforms, ``Slice`` does **not** expose a ``shape``
+        attribute. Its forward-input dim ``D`` is determined by whatever the
+        upstream transform produces — it is a chain-context property, not a
+        constructor parameter, so there is no fixed ``shape`` to declare. The
+        full data shape lives on :class:`SurVAEFlow.data_shape` instead.
+
+    Example:
+        Score the dropped tail under a unit Gaussian decoder:
+
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> from flowjax.distributions import Normal
+        >>> from gauss_flows import Slice
+        >>>
+        >>> dec = Normal(jnp.zeros(2))   # decoder for the dropped 2 dims
+        >>> surj = Slice(keep_dims=3, decoder=dec)
+        >>> x = jnp.array([1.0, 2.0, 3.0, 4.0, 5.0])
+        >>> z, log_det = surj.forward_and_log_det(x, jr.key(0))
+        >>> # z == [1., 2., 3.]; log_det == sum of Normal(0,1).log_prob([4., 5.])
+
+        Inside a SurVAEFlow that maps (4,) data → (2,) latent — note the
+        explicit ``data_shape`` since the chain changes dimensionality:
+
+        >>> from gauss_flows import SurVAEFlow
+        >>> base = Normal(jnp.zeros(2))
+        >>> flow = SurVAEFlow(
+        ...     base,
+        ...     [Slice(keep_dims=2, decoder=Normal(jnp.zeros(2)))],
+        ...     data_shape=(4,),
+        ... )
+    """
+
+    stochastic_forward: ClassVar[bool] = False
+    stochastic_inverse: ClassVar[bool] = True
+    lower_bound: ClassVar[bool] = False
+    keep_dims: int
+    decoder: ConditionalDistribution
+
+    def __init__(self, keep_dims: int, decoder: ConditionalDistribution):
+        if keep_dims <= 0:
+            raise ValueError("keep_dims must be positive.")
+        self.keep_dims = keep_dims
+        self.decoder = decoder
+
+    def forward_and_log_det(
+        self,
+        x: ArrayLike,
+        key: PRNGKeyArray,
+        cond: Array | None = None,
+    ) -> tuple[Array, Array]:
+        """Drop trailing dims; return ``(kept, log q(dropped | kept))``."""
+        del key, cond
+        x_arr = jnp.asarray(x)
+        # x: (D,) -> kept: (keep_dims,), dropped: (D - keep_dims,)
+        kept = x_arr[: self.keep_dims]
+        dropped = x_arr[self.keep_dims :]
+        log_det = self.decoder.log_prob(dropped, condition=kept)
+        return kept, log_det
+
+    def inverse_and_log_det(
+        self,
+        z: ArrayLike,
+        key: PRNGKeyArray,
+        cond: Array | None = None,
+    ) -> tuple[Array, Array]:
+        """Sample the missing tail from the decoder; concat back.
+
+        Returns ``log q(dropped_sampled | z)`` to mirror
+        ``forward_and_log_det`` and match :class:`SimpleMaxPoolSurjection2d`'s
+        inverse convention. ``SurVAEFlow.log_prob`` doesn't consume this value
+        (it only uses ``forward_and_log_det``); the consistent return shape is
+        for callers using the inverse standalone (e.g. ELBO computations).
+        """
+        del cond
+        z_arr = jnp.asarray(z)
+        # dropped: (D - keep_dims,) sampled from decoder; x: (D,)
+        dropped = self.decoder.sample(key, condition=z_arr)
+        x = jnp.concatenate([z_arr, dropped])
+        log_det = self.decoder.log_prob(dropped, condition=z_arr)
+        return x, log_det
+
+
+class Augment(AbstractSurjection):
+    """Generative surjection that appends conditionally sampled dimensions.
+
+    Forward draws ``augment_size`` extra dims from ``encoder`` conditioned on
+    the input and concatenates them; inverse drops the augmented tail:
+
+        forward:  z_aug ~ q(· | x)                   (encoder sample)
+                  z       = concat([x, z_aug])
+                  log_det = − log q(z_aug | x)
+
+        inverse:  x = z[:x_size]                     (deterministic drop)
+
+    Because the forward direction is stochastic, the contribution to
+    ``log_prob`` is an ELBO over the encoder's samples, not an exact density.
+    Use Augment to give a flow extra latent dimensions to model multi-modal
+    structure that would not fit in the data dim alone.
+
+    Args:
+        encoder: Object satisfying :class:`ConditionalDistribution` —
+            ``sample(key, *, condition=x)`` must produce arrays of shape
+            ``(augment_size,)`` and ``log_prob(value, *, condition=x)`` must
+            return a scalar.
+        x_size: Size of the data input event. Determines ``self.shape``.
+        augment_size: Number of latent dims to append.
+
+    Attributes:
+        shape: ``(x_size,)`` — the forward-input event shape, matching the
+            project-wide ``x.shape == self.shape`` convention. ``forward``
+            runtime-validates this.
+
+    Shape:
+        - Input  ``x``:  ``(x_size,)``
+        - Output ``z``:  ``(x_size + augment_size,)``
+        - ``log_det``:   scalar (shape ``()``)
+
+    Example:
+        Augment a 2-D data event with a 2-D learned latent:
+
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> from flowjax.distributions import Normal
+        >>> from gauss_flows import Augment
+        >>>
+        >>> enc = Normal(jnp.zeros(2))
+        >>> surj = Augment(encoder=enc, x_size=2, augment_size=2)
+        >>> x = jnp.array([0.5, -0.3])
+        >>> z, log_det = surj.forward_and_log_det(x, jr.key(0))
+        >>> # z.shape == (4,); log_det == -Normal(0,1).log_prob(z[2:]).sum()
+
+        Inside a SurVAEFlow that maps (2,) data → (4,) latent — supply the
+        explicit ``data_shape`` since the chain changes dimensionality:
+
+        >>> from gauss_flows import SurVAEFlow
+        >>> base = Normal(jnp.zeros(4))
+        >>> flow = SurVAEFlow(
+        ...     base,
+        ...     [Augment(encoder=Normal(jnp.zeros(2)), x_size=2, augment_size=2)],
+        ...     data_shape=(2,),
+        ... )
+    """
+
+    stochastic_forward: ClassVar[bool] = True
+    stochastic_inverse: ClassVar[bool] = False
+    lower_bound: ClassVar[bool] = True
+    shape: tuple[int, ...]
+    encoder: ConditionalDistribution
+    x_size: int
+    augment_size: int
+
+    def __init__(
+        self,
+        encoder: ConditionalDistribution,
+        x_size: int,
+        augment_size: int,
+    ):
+        if x_size <= 0:
+            raise ValueError("x_size must be positive.")
+        if augment_size <= 0:
+            raise ValueError("augment_size must be positive.")
+        self.shape = (x_size,)
+        self.encoder = encoder
+        self.x_size = x_size
+        self.augment_size = augment_size
+
+    def forward_and_log_det(
+        self,
+        x: ArrayLike,
+        key: PRNGKeyArray,
+        cond: Array | None = None,
+    ) -> tuple[Array, Array]:
+        """Sample ``z_aug`` from encoder; ``z = concat([x, z_aug])``."""
+        del cond
+        x_arr = jnp.asarray(x)
+        if x_arr.shape != self.shape:
+            raise ValueError(
+                f"Augment.forward expected x.shape == {self.shape}; got {x_arr.shape}."
+            )
+        # z_aug: (augment_size,); z: (x_size + augment_size,)
+        z_aug = self.encoder.sample(key, condition=x_arr)
+        log_det = -self.encoder.log_prob(z_aug, condition=x_arr)
+        z = jnp.concatenate([x_arr, z_aug])
+        return z, log_det
+
+    def inverse_and_log_det(
+        self,
+        z: ArrayLike,
+        key: PRNGKeyArray,
+        cond: Array | None = None,
+    ) -> tuple[Array, Array]:
+        """Drop the augmented tail; deterministic, log_det = 0."""
+        del key, cond
+        z_arr = jnp.asarray(z)
+        # x: (x_size,)
+        x = z_arr[: self.x_size]
+        return x, jnp.zeros(())
+
+
 __all__ = [
+    "Augment",
     "SimpleAbsSurjection",
     "SimpleMaxPoolSurjection2d",
     "SimpleSortSurjection",
+    "Slice",
 ]

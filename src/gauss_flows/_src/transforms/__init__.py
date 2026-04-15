@@ -3,10 +3,7 @@
 Re-exports all transform classes from the sub-modules.
 """
 
-from gauss_flows._src.transforms.classic import (
-    PlanarFlow,
-    SylvesterFlow,
-)
+from gauss_flows._src.transforms.classic import PlanarFlow, SylvesterFlow
 from gauss_flows._src.transforms.conv import (
     ActNorm,
     HaarWavelet,
@@ -33,9 +30,11 @@ from gauss_flows._src.transforms.rotation import (
 )
 from gauss_flows._src.transforms.stochastic import StochasticPermutation
 from gauss_flows._src.transforms.surjections import (
+    Augment,
     SimpleAbsSurjection,
     SimpleMaxPoolSurjection2d,
     SimpleSortSurjection,
+    Slice,
 )
 
 
@@ -43,6 +42,7 @@ __all__ = [
     "ActNorm",
     "ActNorm1D",
     "AffineCoupling",
+    "Augment",
     "DeepSigmoidCoupling",
     "FixedRotation",
     "HaarWavelet",
@@ -59,6 +59,7 @@ __all__ = [
     "SimpleAbsSurjection",
     "SimpleMaxPoolSurjection2d",
     "SimpleSortSurjection",
+    "Slice",
     "Squeeze",
     "StochasticPermutation",
     "SylvesterFlow",
