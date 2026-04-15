@@ -108,6 +108,10 @@ spline = RQSplineCoupling(key, shape=(10,), n_bins=8)
 circular = CircularRQSplineCoupling(key, shape=(10,))  # all dims periodic
 
 # Periodic utilities
+# Note: PeriodicWrap is a canonical projection (many-to-one), not a true
+# bijection on R. Use it as a leading layer to canonicalise raw angles into
+# [-π, π] before downstream periodic flow layers; do not compose it inside a
+# Transformed/SurVAEFlow that expects to invert back to the original input.
 wrap = PeriodicWrap(ind=(0,), shape=(10,))
 shift = PeriodicShift(ind=(0,), shape=(10,))
 ```

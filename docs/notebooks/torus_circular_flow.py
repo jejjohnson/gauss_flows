@@ -14,10 +14,18 @@
 
 # %% [markdown]
 # # Circular spline coupling on a toroidal density
+#
 # Fits a 2D torus with circular spline couplings that keep each angle periodic.
 
 # %%
+# ruff: noqa: I001
+# matplotlib.use must come before pyplot import; ruff isort would otherwise
+# reorder them into a single sorted block.
 from __future__ import annotations
+
+import matplotlib
+
+matplotlib.use("Agg")
 
 import jax.numpy as jnp
 import jax.random as jr
@@ -39,6 +47,7 @@ SCATTER_KW = dict(s=30, edgecolors="k", linewidths=0.5, alpha=0.5, zorder=5)
 
 # %% [markdown]
 # ## Generate a toroidal dataset
+#
 # Each sample is an angle pair; a two-mode mixture builds torus structure.
 
 # %%
@@ -62,6 +71,7 @@ ax.set_title("Samples on the torus (angles in radians)")
 
 # %% [markdown]
 # ## Build and train a circular coupling flow
+#
 # Stack circular spline couplings with permutations and train by maximum likelihood.
 
 # %%
@@ -109,6 +119,7 @@ loss_ax.set_title("Training curve")
 
 # %% [markdown]
 # ## Sample from the trained circular flow
+#
 # Samples respect angular topology: a $2\\pi$ shift leaves log-probability unchanged.
 
 # %%

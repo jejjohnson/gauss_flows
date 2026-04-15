@@ -30,6 +30,9 @@ dependencies = [
     "optax>=0.1",
     "paramax",
     "jaxtyping",
+    "einops>=0.8.2",
+    "optimistix>=0.0.9",
+    "interpax>=0.3.13",
 ]
 
 [project.urls]
@@ -41,6 +44,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.5.0",
     "pre-commit>=4.5.1",
+    "scipy>=1.13",
 ]
 lint = [
     "ruff>=0.15.10",
@@ -71,7 +75,7 @@ line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
-ignore = ["E402", "E721", "E731", "E741"]
+ignore = ["E402", "E721", "E731", "E741", "RUF002"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

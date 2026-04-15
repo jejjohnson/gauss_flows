@@ -119,7 +119,7 @@ def test_circular_rqspline_coupling_roundtrip(key):
 
 
 def test_circular_coupling_density_continuous_at_boundary(key):
-    """Forward log-density is continuous across the ±π wrap join."""
+    """Forward log_det is continuous across the ±π wrap join."""
     coupling = CircularRQSplineCoupling(
         key,
         shape=(2,),
@@ -138,7 +138,7 @@ def test_circular_coupling_density_continuous_at_boundary(key):
 
 
 def test_circular_coupling_chain_roundtrip(key):
-    """Composing several CircularRQSplineCoupling + Permute layers preserves volume."""
+    """Stacked CircularRQSplineCoupling + Permute layers roundtrip exactly."""
     shape = (4,)
     layer_keys = jr.split(key, 3)
     layers = []

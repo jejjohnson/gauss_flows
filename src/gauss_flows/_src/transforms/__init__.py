@@ -3,10 +3,7 @@
 Re-exports all transform classes from the sub-modules.
 """
 
-from gauss_flows._src.transforms.classic import (
-    PlanarFlow,
-    SylvesterFlow,
-)
+from gauss_flows._src.transforms.classic import PlanarFlow, SylvesterFlow
 from gauss_flows._src.transforms.conv import (
     ActNorm,
     HaarWavelet,
@@ -20,6 +17,7 @@ from gauss_flows._src.transforms.coupling import (
     RQSplineCoupling,
 )
 from gauss_flows._src.transforms.marginal import (
+    HistogramCDF,
     InverseGaussCDF,
     MixtureGaussianCDF,
     MixtureLogisticCDF,
@@ -37,17 +35,27 @@ from gauss_flows._src.transforms.rotation import (
     LULinearPermute,
     OrthogonalRotation,
 )
+from gauss_flows._src.transforms.stochastic import StochasticPermutation
+from gauss_flows._src.transforms.surjections import (
+    Augment,
+    SimpleAbsSurjection,
+    SimpleMaxPoolSurjection2d,
+    SimpleSortSurjection,
+    Slice,
+)
 
 
 __all__ = [
     "ActNorm",
     "ActNorm1D",
     "AffineCoupling",
+    "Augment",
     "CircularRQSplineCoupling",
     "CircularRationalQuadraticSpline",
     "DeepSigmoidCoupling",
     "FixedRotation",
     "HaarWavelet",
+    "HistogramCDF",
     "HouseholderRotation",
     "InverseGaussCDF",
     "Invertible1x1Conv",
@@ -60,6 +68,11 @@ __all__ = [
     "PlanarFlow",
     "RQSplineCoupling",
     "RQSplineMarginal",
+    "SimpleAbsSurjection",
+    "SimpleMaxPoolSurjection2d",
+    "SimpleSortSurjection",
+    "Slice",
     "Squeeze",
+    "StochasticPermutation",
     "SylvesterFlow",
 ]

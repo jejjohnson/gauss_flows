@@ -3,10 +3,7 @@
 Public API re-exported from the private _src/ implementation directory.
 """
 
-from gauss_flows._src.distributions import (
-    GaussianMixture,
-    GaussianPCA,
-)
+from gauss_flows._src.distributions import GaussianMixture, GaussianPCA
 from gauss_flows._src.flows import (
     SurVAEFlow,
     coupling_gaussianization_flow,
@@ -27,11 +24,13 @@ from gauss_flows._src.transforms import (
     ActNorm,
     ActNorm1D,
     AffineCoupling,
+    Augment,
     CircularRationalQuadraticSpline,
     CircularRQSplineCoupling,
     DeepSigmoidCoupling,
     FixedRotation,
     HaarWavelet,
+    HistogramCDF,
     HouseholderRotation,
     InverseGaussCDF,
     Invertible1x1Conv,
@@ -44,13 +43,15 @@ from gauss_flows._src.transforms import (
     PlanarFlow,
     RQSplineCoupling,
     RQSplineMarginal,
+    SimpleAbsSurjection,
+    SimpleMaxPoolSurjection2d,
+    SimpleSortSurjection,
+    Slice,
     Squeeze,
+    StochasticPermutation,
     SylvesterFlow,
 )
-from gauss_flows._src.transforms.base import (
-    AbstractStochastic,
-    AbstractSurjection,
-)
+from gauss_flows._src.transforms.base import AbstractStochastic, AbstractSurjection
 
 
 __all__ = [
@@ -59,6 +60,7 @@ __all__ = [
     "ActNorm",
     "ActNorm1D",
     "AffineCoupling",
+    "Augment",
     "CircularRQSplineCoupling",
     "CircularRationalQuadraticSpline",
     "DeepSigmoidCoupling",
@@ -68,6 +70,7 @@ __all__ = [
     "GaussianMixture",
     "GaussianPCA",
     "HaarWavelet",
+    "HistogramCDF",
     "HouseholderRotation",
     "InverseGaussCDF",
     "Invertible1x1Conv",
@@ -80,7 +83,12 @@ __all__ = [
     "PlanarFlow",
     "RQSplineCoupling",
     "RQSplineMarginal",
+    "SimpleAbsSurjection",
+    "SimpleMaxPoolSurjection2d",
+    "SimpleSortSurjection",
+    "Slice",
     "Squeeze",
+    "StochasticPermutation",
     "SurVAEFlow",
     "SylvesterFlow",
     "coupling_gaussianization_flow",

@@ -28,10 +28,15 @@ from jaxtyping import PRNGKeyArray
 from paramax.utils import inv_softplus
 
 
+def _wrap_all(x: Array, bound: float) -> Array:
+    """Wrap every dim into ``[-bound, bound]``. Fast path used when the
+    'wrap-all-dims' case is statically known (e.g. CircularRQSplineCoupling)."""
+    return ((x + bound) % (2 * bound)) - bound
+
+
 def _wrap_angles(x: Array, mask: Array, bound: float) -> Array:
     """Wrap masked dimensions into ``[-bound, bound]``."""
-    wrapped = ((x + bound) % (2 * bound)) - bound
-    return jnp.where(mask, wrapped, x)
+    return jnp.where(mask, _wrap_all(x, bound), x)
 
 
 def _build_periodic_mask(ind: tuple[int, ...], n_dims: int) -> Array:
@@ -44,12 +49,17 @@ def _build_periodic_mask(ind: tuple[int, ...], n_dims: int) -> Array:
 class PeriodicWrap(AbstractBijection):
     """Canonical projection of selected dimensions onto ``[-bound, bound]``.
 
-    This is **not** a bijection on R — it is a many-to-one map that sends
-    ``x`` and ``x + 2·bound·k`` to the same canonical value. ``inverse_and_log_det``
-    therefore returns the same wrapped value as ``transform_and_log_det``, with a
-    log-determinant of ``0``. Use this layer to *canonicalise* inputs before
-    downstream periodic flow layers; do not compose it before a layer that needs
-    to recover the original R-valued ``x``.
+    .. warning::
+        This subclasses ``flowjax.bijections.AbstractBijection`` for API
+        compatibility but is **not a true bijection on R** — it is a many-to-one
+        canonical projection. ``x`` and ``x + 2·bound·k`` collapse to the same
+        canonical value, and ``inverse_and_log_det`` returns that same wrapped
+        value (not the original ``x``) with ``log_det = 0``. Composing this
+        inside a ``flowjax.distributions.Transformed`` or ``SurVAEFlow`` will
+        give **incorrect log-densities** if the upstream samples are not already
+        in ``[-bound, bound]``, because the change-of-variables formula assumes
+        invertibility. Use this layer only as a leading-edge canonicaliser for
+        raw angles, never as an inner layer in a density model.
 
     Shape:
         Input/output: ``(D,)`` (single event). ``log_det`` is a scalar ``Array``.
@@ -125,7 +135,8 @@ class PeriodicShift(AbstractBijection):
     shape: tuple[int, ...]
     cond_shape: ClassVar[None] = None
     bound: float
-    mask: Array
+    mask: Array  # boolean mask over the full event, used for re-wrapping only
+    indices: Array  # integer indices in `ind` order, used for shift scatter
     shift: Array
 
     def __init__(
@@ -141,9 +152,12 @@ class PeriodicShift(AbstractBijection):
         ind = tuple(ind)
         if any(i < 0 or i >= n_dims for i in ind):
             raise ValueError("All indices in ind must be within [0, n_dims).")
+        if len(set(ind)) != len(ind):
+            raise ValueError("ind must not contain duplicate indices.")
         self.shape = shape
         self.bound = float(bound)
         self.mask = _build_periodic_mask(ind, n_dims)
+        self.indices = jnp.asarray(ind, dtype=jnp.int32)
         shift_values = jnp.asarray(shift_init, dtype=jnp.float32)
         if shift_values.ndim == 0:
             shift_values = jnp.broadcast_to(shift_values, (len(ind),))
@@ -154,8 +168,9 @@ class PeriodicShift(AbstractBijection):
         self.shift = shift_values
 
     def _apply(self, x: Array, sign: float) -> Array:
-        shift_vec = jnp.zeros_like(x)
-        shift_vec = shift_vec.at[self.mask].set(sign * self.shift)
+        # Scatter via integer indices so the shift values stay aligned with
+        # `ind` order (boolean-mask scatter would silently sort by index).
+        shift_vec = jnp.zeros_like(x).at[self.indices].set(sign * self.shift)
         return _wrap_angles(x + shift_vec, self.mask, self.bound)
 
     def transform_and_log_det(self, x: Array, condition=None) -> tuple[Array, Array]:
@@ -331,7 +346,7 @@ class CircularRQSplineCoupling(AbstractBijection):
 
     def transform_and_log_det(self, x: Array, condition=None) -> tuple[Array, Array]:
         x_arr = jnp.asarray(x)
-        x_wrapped = _wrap_angles(x_arr, jnp.ones(self.shape[0], dtype=bool), self.bound)
+        x_wrapped = _wrap_all(x_arr, self.bound)
         x_cond = x_wrapped[: self.untransformed_dim]
         x_trans = x_wrapped[self.untransformed_dim :]
         y_trans, log_det = self._inner.transform_and_log_det(
@@ -342,7 +357,7 @@ class CircularRQSplineCoupling(AbstractBijection):
 
     def inverse_and_log_det(self, y: Array, condition=None) -> tuple[Array, Array]:
         y_arr = jnp.asarray(y)
-        y_wrapped = _wrap_angles(y_arr, jnp.ones(self.shape[0], dtype=bool), self.bound)
+        y_wrapped = _wrap_all(y_arr, self.bound)
         y_cond = y_wrapped[: self.untransformed_dim]
         y_trans = y_wrapped[self.untransformed_dim :]
         x_trans, log_det = self._inner.inverse_and_log_det(
