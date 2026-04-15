@@ -16,6 +16,7 @@ from gauss_flows._src.transforms.conv import (
 from gauss_flows._src.transforms.coupling import (
     ActNorm1D,
     AffineCoupling,
+    BatchNorm,
     DeepSigmoidCoupling,
     RQSplineCoupling,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "ActNorm",
     "ActNorm1D",
     "AffineCoupling",
+    "BatchNorm",
     "DeepSigmoidCoupling",
     "FixedRotation",
     "HaarWavelet",
