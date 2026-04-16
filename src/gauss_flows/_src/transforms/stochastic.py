@@ -19,7 +19,84 @@ import jax.random as jr
 from jax import Array
 from jaxtyping import ArrayLike, PRNGKeyArray
 
+from gauss_flows._src._protocols import ConditionalDistribution
 from gauss_flows._src.transforms.base import AbstractStochastic
+
+
+class VAE(AbstractStochastic):
+    """Variational autoencoder as a SurVAE stochastic transform.
+
+    The forward direction encodes data into a latent sample and returns the
+    per-event ELBO term ``log p(x | z) − log q(z | x)``. The inverse samples
+    from the decoder for generation; its log-det is zero (the inverse is not
+    used inside ``log_prob``).
+
+    Args:
+        encoder: Conditional distribution ``q(z | x)`` supplying ``sample`` and
+            ``log_prob`` methods that accept the conditioning variable via the
+            ``condition`` keyword.
+        decoder: Conditional distribution ``p(x | z)`` with the same protocol.
+
+    Shape:
+        - Input ``x``: ``encoder`` condition shape
+        - Output ``z``: ``encoder`` sample shape
+        - ``log_det``: scalar (shape ``()``)
+
+    Example:
+        Encode and decode a single event, then use inside a :class:`SurVAEFlow`:
+
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> from flowjax.distributions import Normal
+        >>> from gauss_flows import SurVAEFlow, VAE
+        >>>
+        >>> encoder = Normal(jnp.zeros(2))
+        >>> decoder = Normal(jnp.zeros(2))
+        >>> vae = VAE(encoder, decoder)
+        >>> x = jnp.array([0.5, -1.2])
+        >>> z, log_det = vae.forward_and_log_det(x, jr.key(0))
+        >>> x_sample, _ = vae.inverse_and_log_det(z, jr.key(1))
+        >>>
+        >>> base = Normal(jnp.zeros(2))
+        >>> flow = SurVAEFlow(base, [vae])
+    """
+
+    encoder: ConditionalDistribution
+    decoder: ConditionalDistribution
+
+    def __init__(
+        self,
+        encoder: ConditionalDistribution,
+        decoder: ConditionalDistribution,
+    ):
+        self.encoder = encoder
+        self.decoder = decoder
+
+    def forward_and_log_det(
+        self,
+        x: ArrayLike,
+        key: PRNGKeyArray,
+        cond: Array | None = None,
+    ) -> tuple[Array, Array]:
+        """Sample ``z ~ q(z | x)``; return ``log p(x | z) − log q(z | x)``."""
+        del cond
+        x_arr = jnp.asarray(x)
+        z = self.encoder.sample(key, condition=x_arr)
+        log_p = self.decoder.log_prob(x_arr, condition=jnp.asarray(z))
+        log_q = self.encoder.log_prob(z, condition=x_arr)
+        log_det = log_p - log_q
+        return jnp.asarray(z), log_det
+
+    def inverse_and_log_det(
+        self,
+        z: ArrayLike,
+        key: PRNGKeyArray,
+        cond: Array | None = None,
+    ) -> tuple[Array, Array]:
+        """Sample ``x ~ p(x | z)``; inverse log-det is zero."""
+        del cond
+        x = self.decoder.sample(key, condition=jnp.asarray(z))
+        return x, jnp.zeros(())
 
 
 class StochasticPermutation(AbstractStochastic):
@@ -110,4 +187,4 @@ class StochasticPermutation(AbstractStochastic):
         return x, jnp.zeros(())
 
 
-__all__ = ["StochasticPermutation"]
+__all__ = ["VAE", "StochasticPermutation"]
