@@ -4,11 +4,13 @@ These bijections implement invertible convolution operations used in
 image-based normalizing flows (e.g., Glow-style architectures).
 """
 
+from __future__ import annotations
+
 from typing import ClassVar
 
 import jax.numpy as jnp
 from flowjax.bijections import AbstractBijection
-from jax import Array
+from jax import Array, lax
 from jaxtyping import ArrayLike, PRNGKeyArray
 
 
@@ -194,9 +196,149 @@ class Squeeze(AbstractBijection):
         return jnp.asarray(y).reshape(self.shape), jnp.zeros(())
 
 
+class OrthogonalConvExponential(AbstractBijection):
+    """Orthogonal convolutional exponential bijection.
+
+    Approximates the matrix exponential of a convolution operator using a
+    truncated power series. The kernel is spectral-normalized to keep the
+    operator norm ≤ 1, which stabilizes the series and preserves
+    invertibility via kernel negation.
+
+    Shape:
+        Input/output: (H, W, C) single event (no batch). log_det is scalar.
+
+    Example:
+        >>> import jax.random as jr
+        >>> key = jr.key(0)
+        >>> transform = OrthogonalConvExponential(key, shape=(8, 8, 3))
+        >>> x = jr.normal(key, (8, 8, 3))
+        >>> y, log_det = transform.transform_and_log_det(x)
+        >>> x_rec, log_det_inv = transform.inverse_and_log_det(y)
+        >>> jnp.allclose(x, x_rec, atol=1e-4)
+        DeviceArray(True, dtype=bool)
+    """
+
+    shape: tuple[int, ...]
+    cond_shape: ClassVar[None] = None
+    kernel: Array  # (k_h, k_w, C, C) in HWIO format
+    n_terms: int
+    n_power_iterations: int
+
+    def __init__(
+        self,
+        key: PRNGKeyArray,
+        shape: tuple[int, int, int],
+        *,
+        kernel_size: int = 3,
+        n_terms: int = 8,
+        n_power_iterations: int = 2,
+    ):
+        import jax.random as jr
+
+        if len(shape) != 3:
+            raise ValueError("OrthogonalConvExponential expects shape (H, W, C).")
+        if kernel_size % 2 == 0:
+            raise ValueError("kernel_size must be odd to have a central pixel.")
+        if n_terms < 1:
+            raise ValueError("n_terms must be positive.")
+        if n_power_iterations < 1:
+            raise ValueError("n_power_iterations must be positive.")
+
+        self.shape = shape
+        c = shape[-1]
+        self.n_terms = int(n_terms)
+        self.n_power_iterations = int(n_power_iterations)
+        self.kernel = jr.normal(key, (kernel_size, kernel_size, c, c)) * 0.05
+
+    def _conv2d(self, x: Array, kernel: Array) -> Array:
+        # x: (H, W, C) -> x_b: (1, H, W, C)
+        x_b = x[None, ...]
+        y = lax.conv_general_dilated(
+            x_b,
+            kernel,
+            window_strides=(1, 1),
+            padding="SAME",
+            dimension_numbers=("NHWC", "HWIO", "NHWC"),
+        )
+        # y: (1, H, W, C) -> (H, W, C)
+        return y[0]
+
+    def _conv2d_transpose(self, x: Array, kernel: Array) -> Array:
+        # x: (H, W, C) -> x_b: (1, H, W, C)
+        x_b = x[None, ...]
+        y = lax.conv_transpose(
+            lhs=x_b,
+            rhs=kernel,
+            strides=(1, 1),
+            padding="SAME",
+            dimension_numbers=("NHWC", "HWIO", "NHWC"),
+        )
+        # y: (1, H, W, C) -> (H, W, C)
+        return y[0]
+
+    def _spectral_normalize(self, kernel: Array) -> Array:
+        h, w, c = self.shape
+        u0 = jnp.ones((h, w, c)) / jnp.sqrt(float(h * w * c))
+
+        def body(_, state):
+            u_vec, v_vec = state
+            v_vec = self._conv2d_transpose(u_vec, kernel)
+            v_vec = v_vec / (jnp.linalg.norm(v_vec) + 1e-6)
+            u_vec = self._conv2d(v_vec, kernel)
+            u_vec = u_vec / (jnp.linalg.norm(u_vec) + 1e-6)
+            return u_vec, v_vec
+
+        u, v = lax.fori_loop(0, self.n_power_iterations, body, (u0, u0))
+        conv_v = self._conv2d(v, kernel)
+        sigma = jnp.abs(jnp.vdot(u, conv_v))
+        scale = jnp.maximum(sigma, 1.0)
+        return kernel / (scale + 1e-6)
+
+    def _convolution_exponential(self, x: Array, kernel: Array) -> Array:
+        product = x
+        result = x
+
+        def body(carry, i):
+            prod, acc = carry
+            prod = self._conv2d(prod, kernel) / (i + 1)
+            acc = acc + prod
+            return (prod, acc), None
+
+        (product, result), _ = lax.scan(
+            body,
+            (product, result),
+            jnp.arange(self.n_terms),
+        )
+        return result
+
+    def _log_det(self, kernel: Array) -> Array:
+        h, w, _ = self.shape
+        k_h, k_w, _, _ = kernel.shape
+        center_h = k_h // 2
+        center_w = k_w // 2
+        center_slice = kernel[center_h, center_w, :, :]
+        diag_trace = jnp.trace(center_slice)
+        return jnp.asarray(h * w * diag_trace)
+
+    def transform_and_log_det(self, x: ArrayLike, condition=None):
+        x_arr = jnp.asarray(x)
+        kernel_sn = self._spectral_normalize(self.kernel)
+        y = self._convolution_exponential(x_arr, kernel_sn)
+        log_det = self._log_det(kernel_sn)
+        return y, log_det
+
+    def inverse_and_log_det(self, y: ArrayLike, condition=None):
+        y_arr = jnp.asarray(y)
+        kernel_sn = self._spectral_normalize(self.kernel)
+        x = self._convolution_exponential(y_arr, -kernel_sn)
+        log_det = -self._log_det(kernel_sn)
+        return x, log_det
+
+
 __all__ = [
     "ActNorm",
     "HaarWavelet",
     "Invertible1x1Conv",
+    "OrthogonalConvExponential",
     "Squeeze",
 ]
