@@ -7,8 +7,9 @@ from typing import ClassVar
 import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
+import paramax
 from flowjax.bijections import AbstractBijection
-from jax import Array, lax
+from jax import Array
 from jaxtyping import ArrayLike, PRNGKeyArray
 
 from gauss_flows._src.transforms.bijections.linear.rotation import OrthogonalRotation
@@ -33,10 +34,30 @@ class Orthogonal1x1Conv(AbstractBijection):
     zero for a Householder-like conditioner.
 
     **Fixed path** (``fixed_matrix`` supplied): holds Q constant at the
-    supplied matrix. Gradients into ``fixed_matrix`` are blocked via
-    :func:`jax.lax.stop_gradient`, so Optax steps against a frozen flow
-    leave the matrix exactly unchanged — unlike plain :class:`FixedRotation`
-    whose ``matrix`` field is a mutable leaf.
+    supplied matrix. ``fixed_matrix`` is wrapped in
+    :class:`paramax.NonTrainable` so the standard flowjax training loops
+    (``flowjax.train.fit_to_data`` and friends) and any
+    ``eqx.filter(model, eqx.is_inexact_array)``-based optimizer-filter
+    combined with ``paramax.unwrap`` treat the matrix as frozen; the
+    wrapper also applies ``jax.lax.stop_gradient`` to the inner array
+    every time :meth:`_get_rotation_matrix` unwraps the module.
+
+    .. warning::
+        **Decoupled weight decay bypasses `NonTrainable`.** Optimizers that
+        update parameters from the parameter *value* (e.g. ``optax.adamw``
+        with a non-zero ``weight_decay``) will still drift ``fixed_matrix``
+        away from orthogonality because weight decay does not go through
+        the gradient path. To keep ``fixed_matrix`` bit-identical under
+        ``adamw``-style training, partition it out of the optimizer state
+        before updating::
+
+            trainable, frozen = eqx.partition(
+                model,
+                lambda leaf: eqx.is_inexact_array(leaf)
+                and not isinstance(leaf, paramax.NonTrainable),
+                is_leaf=lambda leaf: isinstance(leaf, paramax.NonTrainable),
+            )
+            # optimize `trainable`, recombine with `frozen` at step end.
 
     Args:
         key: PRNG key used for learnable Cayley initialisation. Ignored
@@ -45,10 +66,14 @@ class Orthogonal1x1Conv(AbstractBijection):
             subpackage).
         n_channels: Number of channels / feature dimensions.
         fixed_matrix: Optional pre-computed ``(n_channels, n_channels)``
-            orthogonal matrix (e.g. from PCA or a random SVD rotation).
-            When provided, the layer is non-trainable — gradients through
-            the stored matrix are blocked. When ``None`` (default), the
-            layer is Cayley-parameterised and trainable.
+            orthogonal matrix (e.g. from PCA or a random QR). Validated
+            at construction — must satisfy ``Q.T @ Q ≈ I`` within
+            ``orthogonality_atol``. When ``None`` (default), the layer is
+            Cayley-parameterised and trainable.
+        orthogonality_atol: Absolute tolerance for the orthogonality
+            check on ``fixed_matrix``. Defaults to ``1e-5`` — loose enough
+            for fp32 QR / SVD residuals, tight enough to catch casual
+            errors (e.g. passing a non-orthogonal PCA loading matrix).
 
     Shape:
         - Input  ``x``:  ``(n_channels,)``
@@ -69,24 +94,28 @@ class Orthogonal1x1Conv(AbstractBijection):
     Example:
         Learnable (Cayley-parameterised, near-identity init):
 
+        >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import Orthogonal1x1Conv
         >>> conv = Orthogonal1x1Conv(jr.key(0), n_channels=4)
         >>> y, log_det = conv.transform_and_log_det(jr.normal(jr.key(1), (4,)))
-        >>> assert y.shape == (4,) and log_det == 0.0
+        >>> assert y.shape == (4,)
+        >>> assert jnp.allclose(log_det, 0.0)
 
         Fixed (pre-computed orthogonal matrix, non-trainable):
 
-        >>> import jax.numpy as jnp
         >>> Q, _ = jnp.linalg.qr(jr.normal(jr.key(2), (4, 4)))
         >>> conv_fixed = Orthogonal1x1Conv(jr.key(0), n_channels=4, fixed_matrix=Q)
         >>> y_fixed, _ = conv_fixed.transform_and_log_det(jr.normal(jr.key(3), (4,)))
-        >>> # Fixed matrix survives gradient steps unchanged (see tests).
     """
 
     shape: tuple[int, ...]
     cond_shape: ClassVar[None] = None
     _rotation: OrthogonalRotation | None
+    # ``fixed_matrix`` is stored as ``paramax.NonTrainable[Array]`` at
+    # runtime when supplied, None otherwise. Annotated as ``Array | None``
+    # to match flowjax/paramax ergonomics (same pragmatic convention used
+    # by ``_DeepSigmoidTransformer``'s ``base_scale`` / ``amplitudes``).
     fixed_matrix: Array | None
 
     def __init__(
@@ -95,6 +124,7 @@ class Orthogonal1x1Conv(AbstractBijection):
         n_channels: int,
         *,
         fixed_matrix: ArrayLike | None = None,
+        orthogonality_atol: float = 1e-5,
     ):
         self.shape = (n_channels,)
         if fixed_matrix is None:
@@ -116,20 +146,34 @@ class Orthogonal1x1Conv(AbstractBijection):
                     "fixed_matrix must have shape "
                     f"({n_channels}, {n_channels}); got {m.shape}."
                 )
+            # Validate Q.T @ Q ≈ I. Evaluated eagerly at construction —
+            # outside jit, so the ``.item()`` call is safe.
+            eye = jnp.eye(n_channels, dtype=m.dtype)
+            residual = jnp.max(jnp.abs(m.T @ m - eye))
+            if not bool(jnp.allclose(m.T @ m, eye, atol=orthogonality_atol).item()):
+                raise ValueError(
+                    "fixed_matrix must be orthogonal (Q.T @ Q ≈ I) within "
+                    f"atol={orthogonality_atol}; got max|Q.T @ Q - I| = "
+                    f"{float(residual.item()):.3e}."
+                )
             self._rotation = None
-            self.fixed_matrix = m
+            # NonTrainable signals to paramax-aware training loops that
+            # this leaf should not be updated. Its ``unwrap`` applies
+            # ``stop_gradient`` so the gradient path is also blocked.
+            self.fixed_matrix = paramax.NonTrainable(m)
 
     def _get_rotation_matrix(self) -> Array:
         """Return the orthogonal matrix Q for the current forward/inverse call.
 
-        Shape: ``(n_channels, n_channels)``. When fixed, gradients through
-        Q are blocked via ``lax.stop_gradient`` so the matrix is genuinely
-        non-trainable.
+        Shape: ``(n_channels, n_channels)``. Unwraps the module so
+        ``NonTrainable``-wrapped ``fixed_matrix`` is materialised with
+        ``stop_gradient`` applied automatically.
         """
-        if self.fixed_matrix is not None:
-            return lax.stop_gradient(self.fixed_matrix)
+        unwrapped = paramax.unwrap(self)
+        if unwrapped.fixed_matrix is not None:
+            return unwrapped.fixed_matrix
         # Learnable path: reuse OrthogonalRotation's Cayley construction.
-        return self._rotation._get_rotation_matrix()  # type: ignore[union-attr]
+        return unwrapped._rotation._get_rotation_matrix()  # type: ignore[union-attr]
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
         Q = self._get_rotation_matrix()

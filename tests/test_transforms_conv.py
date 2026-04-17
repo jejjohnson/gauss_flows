@@ -137,14 +137,51 @@ def test_orthogonal1x1conv_fixed_matrix_shape_validation(key):
         Orthogonal1x1Conv(key, n_channels=4, fixed_matrix=jnp.eye(3))
 
 
-def test_orthogonal1x1conv_fixed_stays_fixed_under_gradient_step(key):
-    """fixed_matrix survives an Optax step unchanged.
+def test_orthogonal1x1conv_fixed_matrix_orthogonality_validation(key):
+    """Non-orthogonal fixed_matrix raises ValueError at construction."""
+    import pytest
 
-    This is the load-bearing test for the claim that ``fixed_matrix``
-    is genuinely non-trainable. Without ``lax.stop_gradient`` in
-    ``_get_rotation_matrix``, any filter-on-inexact-array optimizer
-    would update the matrix and violate orthogonality.
+    # Diagonal matrix with non-unit entries — shape OK, orthogonality fails.
+    non_orth = jnp.diag(jnp.array([1.0, 2.0, 3.0, 4.0]))
+    with pytest.raises(ValueError, match=r"fixed_matrix must be orthogonal"):
+        Orthogonal1x1Conv(key, n_channels=4, fixed_matrix=non_orth)
+
+    # A generic non-orthogonal matrix (random Gaussian, not QR'd).
+    random_nonorth = jr.normal(jr.fold_in(key, 11), (4, 4))
+    with pytest.raises(ValueError, match=r"fixed_matrix must be orthogonal"):
+        Orthogonal1x1Conv(key, n_channels=4, fixed_matrix=random_nonorth)
+
+
+def test_orthogonal1x1conv_fixed_matrix_accepts_custom_tolerance(key):
+    """Loosened orthogonality_atol allows near-orthogonal inputs."""
+    # Start from a QR rotation and perturb slightly to break tight tolerance.
+    Q, _ = jnp.linalg.qr(jr.normal(jr.fold_in(key, 12), (4, 4)))
+    Q_noisy = Q + 1e-3 * jr.normal(jr.fold_in(key, 13), Q.shape)
+    # Default atol (1e-5) rejects; loose atol (1e-2) accepts.
+    import pytest
+
+    with pytest.raises(ValueError, match=r"fixed_matrix must be orthogonal"):
+        Orthogonal1x1Conv(key, n_channels=4, fixed_matrix=Q_noisy)
+    # No error — loose tolerance accepts the perturbed matrix (but the user
+    # accepts the slight non-orthogonality of the inverse as a consequence).
+    Orthogonal1x1Conv(key, n_channels=4, fixed_matrix=Q_noisy, orthogonality_atol=1e-2)
+
+
+def test_orthogonal1x1conv_fixed_stays_fixed_under_sgd_step(key):
+    """fixed_matrix survives a plain-SGD Optax step unchanged.
+
+    Load-bearing regression test for the ``NonTrainable`` wrapping +
+    ``paramax.unwrap``-based ``stop_gradient``. If that chain breaks,
+    this test catches it.
+
+    NB: This does **not** test ``optax.adamw``-style decoupled weight
+    decay, which bypasses the gradient path and would drift
+    ``fixed_matrix`` regardless. The docstring documents that users
+    applying weight decay must ``eqx.partition`` out the fixed matrix
+    before updating.
     """
+    import paramax
+
     n_channels = 4
     Q0, _ = jnp.linalg.qr(jr.normal(jr.fold_in(key, 7), (n_channels, n_channels)))
     conv = Orthogonal1x1Conv(key, n_channels, fixed_matrix=Q0)
@@ -160,8 +197,13 @@ def test_orthogonal1x1conv_fixed_stays_fixed_under_gradient_step(key):
     updates, _ = optim.update(grads, opt_state)
     updated = eqx.apply_updates(conv, updates)
 
-    # fixed_matrix is the same array object-wise, and produces the same Q.
-    assert jnp.allclose(updated.fixed_matrix, Q0, atol=0.0)
+    # After update, the (still-wrapped) fixed_matrix must unwrap to the
+    # original Q0. Compare the materialised Q via _get_rotation_matrix
+    # which goes through paramax.unwrap on both sides.
+    before_Q = paramax.unwrap(conv).fixed_matrix
+    after_Q = paramax.unwrap(updated).fixed_matrix
+    assert jnp.allclose(after_Q, Q0, atol=0.0)
+    assert jnp.allclose(before_Q, after_Q, atol=0.0)
     assert jnp.allclose(
         updated._get_rotation_matrix(), conv._get_rotation_matrix(), atol=0.0
     )
@@ -226,12 +268,14 @@ def test_orthogonal1x1conv_jit(key):
 
     conv_learn = Orthogonal1x1Conv(key, n_channels)
     y1, ld1 = forward(conv_learn, x)
-    assert y1.shape == (n_channels,) and ld1 == 0.0
+    assert y1.shape == (n_channels,)
+    assert jnp.allclose(ld1, 0.0, atol=1e-5)
 
     Q, _ = jnp.linalg.qr(jr.normal(jr.fold_in(key, 3), (n_channels, n_channels)))
     conv_fixed = Orthogonal1x1Conv(key, n_channels, fixed_matrix=Q)
     y2, ld2 = forward(conv_fixed, x)
-    assert y2.shape == (n_channels,) and ld2 == 0.0
+    assert y2.shape == (n_channels,)
+    assert jnp.allclose(ld2, 0.0, atol=1e-5)
 
 
 def test_orthogonal1x1conv_matches_orthogonal_rotation_with_shared_params(key):
