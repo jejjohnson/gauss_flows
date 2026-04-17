@@ -1,41 +1,37 @@
 """Transforms sub-package for gauss_flows.
 
-Re-exports all transform classes from the sub-modules.
+Re-exports every transform class from the nested SurVAE-taxonomy
+subpackages (:mod:`.bijections`, :mod:`.surjections`, :mod:`.stochastic`)
+so downstream code can keep importing from ``gauss_flows._src.transforms``
+without caring which leaf module a class lives in.
 """
 
-from gauss_flows._src.transforms.classic import PlanarFlow, SylvesterFlow
-from gauss_flows._src.transforms.conv import (
+from gauss_flows._src.transforms.bijections import (
     ActNorm,
-    HaarWavelet,
-    Invertible1x1Conv,
-    OrthogonalConvExponential,
-    Squeeze,
-)
-from gauss_flows._src.transforms.coupling import (
     ActNorm1D,
     AffineCoupling,
     BatchNorm,
-    DeepSigmoidCoupling,
-    RQSplineCoupling,
-)
-from gauss_flows._src.transforms.marginal import (
-    HistogramCDF,
-    InverseGaussCDF,
-    MixtureGaussianCDF,
-    MixtureLogisticCDF,
-    RQSplineMarginal,
-)
-from gauss_flows._src.transforms.periodic import (
     CircularRationalQuadraticSpline,
     CircularRQSplineCoupling,
+    DeepSigmoidCoupling,
+    FixedRotation,
+    HaarWavelet,
+    HistogramCDF,
+    HouseholderRotation,
+    InverseGaussCDF,
+    Invertible1x1Conv,
+    LULinearPermute,
+    MixtureGaussianCDF,
+    MixtureLogisticCDF,
+    OrthogonalConvExponential,
+    OrthogonalRotation,
     PeriodicShift,
     PeriodicWrap,
-)
-from gauss_flows._src.transforms.rotation import (
-    FixedRotation,
-    HouseholderRotation,
-    LULinearPermute,
-    OrthogonalRotation,
+    PlanarFlow,
+    RQSplineCoupling,
+    RQSplineMarginal,
+    Squeeze,
+    SylvesterFlow,
 )
 from gauss_flows._src.transforms.stochastic import VAE, StochasticPermutation
 from gauss_flows._src.transforms.surjections import (
