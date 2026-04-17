@@ -57,6 +57,7 @@ class MixtureGaussianCDF(AbstractBijection):
         return jnp.log(jnp.sum(weights * jnp.exp(log_pdfs), axis=-1) + 1e-38)
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
+        x = jnp.asarray(x)
         scales = softplus(self.log_scales) + 1e-5
         weights = softmax(self.log_weights, axis=-1)
 
@@ -75,6 +76,7 @@ class MixtureGaussianCDF(AbstractBijection):
     def inverse_and_log_det(self, y: ArrayLike, condition=None):
         from gauss_flows._src.utils import bisection_inverse
 
+        y = jnp.asarray(y)
         scales = softplus(self.log_scales) + 1e-5
         weights = softmax(self.log_weights, axis=-1)
 
@@ -140,6 +142,7 @@ class MixtureLogisticCDF(AbstractBijection):
         return jnp.log(jnp.sum(weights * jnp.exp(log_pdfs), axis=-1) + 1e-38)
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
+        x = jnp.asarray(x)
         scales = softplus(self.log_scales) + 1e-5
         weights = softmax(self.log_weights, axis=-1)
 
@@ -155,6 +158,7 @@ class MixtureLogisticCDF(AbstractBijection):
     def inverse_and_log_det(self, y: ArrayLike, condition=None):
         from gauss_flows._src.utils import bisection_inverse
 
+        y = jnp.asarray(y)
         scales = softplus(self.log_scales) + 1e-5
         weights = softmax(self.log_weights, axis=-1)
 

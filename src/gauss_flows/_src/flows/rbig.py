@@ -1,5 +1,7 @@
 """Iterative RBIG (Rotation-Based Iterative Gaussianization) flow."""
 
+from __future__ import annotations
+
 from flowjax.distributions import Transformed
 from jaxtyping import PRNGKeyArray
 
