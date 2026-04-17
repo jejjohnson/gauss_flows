@@ -92,6 +92,23 @@ def test_convexp_roundtrip_with_large_weight(key):
     assert jnp.isclose(jnp.linalg.norm(x), jnp.linalg.norm(y), rtol=5e-4)
 
 
+def test_convexp_roundtrip_with_c1_large_weight(key):
+    # Regression: skew-symmetric kernels with C=1 have zero DC response,
+    # so a constant power-iteration seed collapsed to 0, sigma was reported
+    # as ~0, no clipping triggered, and the Taylor series diverged wildly.
+    # With a non-DC seed the round trip must stay accurate under large scale.
+    shape = (6, 6, 1)
+    transform = OrthogonalConvExponential(
+        key, shape=shape, kernel_size=3, n_terms=12, n_power_iterations=6
+    )
+    scaled = eqx.tree_at(lambda m: m.weight, transform, transform.weight * 50.0)
+    x = jr.normal(key, shape)
+    y, _ = scaled.transform_and_log_det(x)
+    x_rec, _ = scaled.inverse_and_log_det(y)
+    assert jnp.allclose(x, x_rec, atol=1e-3)
+    assert jnp.isclose(jnp.linalg.norm(x), jnp.linalg.norm(y), rtol=1e-3)
+
+
 def test_convexp_spectral_norm_blocks_gradient_through_sigma(key):
     # The spectral-norm estimate must not introduce a gradient on the power
     # iteration; grads w.r.t. weight flow only through kernel / stop_grad(sigma).

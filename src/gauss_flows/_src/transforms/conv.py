@@ -246,8 +246,16 @@ class OrthogonalConvExponential(AbstractBijection):
             \;=\; \sum_{k=0}^{N} \frac{M_K^k\, x}{k!}
             \;=\; \bigl(I + M_K + \tfrac{1}{2!}M_K^2 + \dots\bigr)\,x,
 
-    which we compute with a :func:`jax.lax.scan` that accumulates
-    :math:`r_{k+1} = r_k + \frac{1}{k+1} M_K\, r_k` (see
+    which we compute with a :func:`jax.lax.scan` using a separate
+    Taylor-term accumulator :math:`t_k`: starting from
+    :math:`t_0 = r_0 = x`, we update
+
+    .. math::
+
+        t_{k+1} \;=\; \frac{1}{k+1}\, M_K\, t_k, \qquad
+        r_{k+1} \;=\; r_k + t_{k+1},
+
+    so that :math:`r_N = p_N(M_K)\,x` (see
     :meth:`_convolution_exponential`). The truncation error is
 
     .. math::
@@ -438,15 +446,32 @@ class OrthogonalConvExponential(AbstractBijection):
         Two iterations suffice because we only need an *upper bound* (we
         take :math:`\max(\sigma, 1)`), not high accuracy.
 
+        **Seed choice.** The seed must have non-zero projection on the
+        leading singular vector of :math:`M_K`. A constant (DC) vector
+        fails for skew-symmetric kernels with :math:`C = 1`: such kernels
+        have :math:`\operatorname{tr}(K_{\text{center}}) = 0` *and*
+        spatial antisymmetry, so :math:`M_K \mathbf{1} = 0`. Starting
+        from :math:`\mathbf{1}` collapses the iteration to :math:`0`,
+        :math:`\sigma` is reported as :math:`\approx 0`, no clipping
+        triggers, and the Taylor series silently diverges for
+        :math:`\|M_K\| > 1`. We use a deterministic non-DC pattern
+        (:math:`\sin(\text{arange})`) instead — always has non-trivial
+        projection on any non-zero operator's leading singular vector.
+
         Shape:
             ``kernel`` : ``(k_h, k_w, C, C)``
             ``u``, ``v`` (power-iteration vectors): ``(H, W, C)``
             returns    : ``(k_h, k_w, C, C)``  (rescaled, grad-flowing)
         """
         h, w, c = self.shape
-        # Seed: unit-norm constant vector; any non-orthogonal seed converges.
-        # u0: (H, W, C)
-        u0 = jnp.ones((h, w, c)) / jnp.sqrt(float(h * w * c))
+        # Non-DC seed — constant vectors sit in ker(M_K) for skew kernels
+        # with C=1 (and more generally lose to symmetric loss of the DC
+        # mode), so power iteration collapses to 0. sin(arange) is
+        # deterministic, has broad spectral content, and avoids the
+        # degeneracy. u0: (H, W, C)
+        flat = jnp.arange(h * w * c, dtype=kernel.dtype)
+        u0 = jnp.sin(flat).reshape(h, w, c)
+        u0 = u0 / (jnp.linalg.norm(u0) + 1e-8)
 
         # Block gradients through the power iteration: we only want grads
         # through the *rescale* `kernel / sigma`, not through the estimate.
