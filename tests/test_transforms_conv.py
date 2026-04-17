@@ -1,13 +1,16 @@
 """Tests for conv transforms."""
 
+import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
+import optax
 
 from gauss_flows import (
     ActNorm,
     HaarWavelet,
     Invertible1x1Conv,
     Orthogonal1x1Conv,
+    OrthogonalRotation,
     Squeeze,
 )
 
@@ -73,9 +76,9 @@ def test_squeeze_forward_inverse(key):
 
 
 def test_orthogonal1x1conv_learnable_forward_inverse(key):
-    """Test learnable orthogonal 1x1 conv forward and inverse."""
+    """Learnable path roundtrips exactly."""
     n_channels = 4
-    conv = Orthogonal1x1Conv(key, n_channels, fixed=False)
+    conv = Orthogonal1x1Conv(key, n_channels)
     x = jr.normal(key, (n_channels,))
     y, log_det = conv.transform_and_log_det(x)
     x_rec, log_det_inv = conv.inverse_and_log_det(y)
@@ -84,9 +87,9 @@ def test_orthogonal1x1conv_learnable_forward_inverse(key):
 
 
 def test_orthogonal1x1conv_learnable_shape(key):
-    """Test learnable orthogonal 1x1 conv output shapes."""
+    """Learnable path preserves shape."""
     n_channels = 4
-    conv = Orthogonal1x1Conv(key, n_channels, fixed=False)
+    conv = Orthogonal1x1Conv(key, n_channels)
     x = jr.normal(key, (n_channels,))
     y, log_det = conv.transform_and_log_det(x)
     assert y.shape == (n_channels,)
@@ -94,18 +97,21 @@ def test_orthogonal1x1conv_learnable_shape(key):
 
 
 def test_orthogonal1x1conv_learnable_volume_preserving(key):
-    """Test that learnable orthogonal 1x1 conv has log-det = 0."""
+    """Learnable path reports log_det == 0 in both directions."""
     n_channels = 4
-    conv = Orthogonal1x1Conv(key, n_channels, fixed=False)
+    conv = Orthogonal1x1Conv(key, n_channels)
     x = jr.normal(key, (n_channels,))
     _, log_det_f = conv.transform_and_log_det(x)
+    _, log_det_i = conv.inverse_and_log_det(x)
     assert jnp.allclose(log_det_f, 0.0, atol=1e-5)
+    assert jnp.allclose(log_det_i, 0.0, atol=1e-5)
 
 
 def test_orthogonal1x1conv_fixed_forward_inverse(key):
-    """Test fixed orthogonal 1x1 conv forward and inverse."""
+    """Fixed path roundtrips exactly when given a valid orthogonal matrix."""
     n_channels = 4
-    conv = Orthogonal1x1Conv(key, n_channels, fixed=True)
+    Q, _ = jnp.linalg.qr(jr.normal(jr.fold_in(key, 0), (n_channels, n_channels)))
+    conv = Orthogonal1x1Conv(key, n_channels, fixed_matrix=Q)
     x = jr.normal(key, (n_channels,))
     y, log_det = conv.transform_and_log_det(x)
     x_rec, log_det_inv = conv.inverse_and_log_det(y)
@@ -113,42 +119,132 @@ def test_orthogonal1x1conv_fixed_forward_inverse(key):
     assert jnp.allclose(log_det + log_det_inv, 0.0, atol=1e-5)
 
 
-def test_orthogonal1x1conv_fixed_is_identity(key):
-    """Test that fixed mode starts as identity."""
+def test_orthogonal1x1conv_fixed_identity_is_noop(key):
+    """Supplying the identity matrix makes the layer a pass-through."""
     n_channels = 4
-    conv = Orthogonal1x1Conv(key, n_channels, fixed=True)
+    conv = Orthogonal1x1Conv(key, n_channels, fixed_matrix=jnp.eye(n_channels))
     x = jr.normal(key, (n_channels,))
     y, log_det = conv.transform_and_log_det(x)
-    # Fixed mode initializes as identity
     assert jnp.allclose(x, y, atol=1e-6)
     assert jnp.allclose(log_det, 0.0, atol=1e-6)
 
 
-def test_orthogonal1x1conv_fixed_volume_preserving(key):
-    """Test that fixed orthogonal 1x1 conv has log-det = 0."""
+def test_orthogonal1x1conv_fixed_matrix_shape_validation(key):
+    """Wrong-shape fixed_matrix raises ValueError at construction."""
+    import pytest
+
+    with pytest.raises(ValueError, match=r"fixed_matrix must have shape"):
+        Orthogonal1x1Conv(key, n_channels=4, fixed_matrix=jnp.eye(3))
+
+
+def test_orthogonal1x1conv_fixed_stays_fixed_under_gradient_step(key):
+    """fixed_matrix survives an Optax step unchanged.
+
+    This is the load-bearing test for the claim that ``fixed_matrix``
+    is genuinely non-trainable. Without ``lax.stop_gradient`` in
+    ``_get_rotation_matrix``, any filter-on-inexact-array optimizer
+    would update the matrix and violate orthogonality.
+    """
     n_channels = 4
-    conv = Orthogonal1x1Conv(key, n_channels, fixed=True)
-    x = jr.normal(key, (n_channels,))
-    _, log_det = conv.transform_and_log_det(x)
-    assert jnp.allclose(log_det, 0.0, atol=1e-5)
+    Q0, _ = jnp.linalg.qr(jr.normal(jr.fold_in(key, 7), (n_channels, n_channels)))
+    conv = Orthogonal1x1Conv(key, n_channels, fixed_matrix=Q0)
+    x = jr.normal(jr.fold_in(key, 8), (n_channels,))
+
+    def loss(m):
+        y, _ = m.transform_and_log_det(x)
+        return jnp.sum(y**2)
+
+    grads = eqx.filter_grad(loss)(conv)
+    optim = optax.sgd(1e-1)
+    opt_state = optim.init(eqx.filter(conv, eqx.is_inexact_array))
+    updates, _ = optim.update(grads, opt_state)
+    updated = eqx.apply_updates(conv, updates)
+
+    # fixed_matrix is the same array object-wise, and produces the same Q.
+    assert jnp.allclose(updated.fixed_matrix, Q0, atol=0.0)
+    assert jnp.allclose(
+        updated._get_rotation_matrix(), conv._get_rotation_matrix(), atol=0.0
+    )
+
+
+def test_orthogonal1x1conv_learnable_moves_under_gradient_step(key):
+    """Learnable path's skew_params DO move under a gradient step.
+
+    Use a symmetry-breaking target rather than ``||y||²`` — the latter is
+    constant w.r.t. ``skew_params`` because orthogonal Q preserves norm, so
+    the gradient vanishes and nothing would move.
+    """
+    n_channels = 4
+    conv = Orthogonal1x1Conv(key, n_channels)
+    x = jr.normal(jr.fold_in(key, 1), (n_channels,))
+    target = jnp.arange(n_channels, dtype=float)
+
+    def loss(m):
+        y, _ = m.transform_and_log_det(x)
+        return jnp.sum((y - target) ** 2)
+
+    grads = eqx.filter_grad(loss)(conv)
+    optim = optax.sgd(1e-1)
+    opt_state = optim.init(eqx.filter(conv, eqx.is_inexact_array))
+    updates, _ = optim.update(grads, opt_state)
+    updated = eqx.apply_updates(conv, updates)
+    assert not jnp.allclose(updated._rotation.skew_params, conv._rotation.skew_params)
 
 
 def test_orthogonal1x1conv_orthogonality(key):
-    """Test that the weight matrix is actually orthogonal (Q @ Q.T ≈ I)."""
+    """Weight matrix is orthogonal (Q @ Q.T ≈ I) in both paths."""
     n_channels = 4
-    conv = Orthogonal1x1Conv(key, n_channels, fixed=False)
-    Q = conv._get_rotation_matrix()
-    # Check Q @ Q.T = I
-    I = jnp.eye(n_channels)
-    assert jnp.allclose(Q @ Q.T, I, atol=1e-5)
-    assert jnp.allclose(Q.T @ Q, I, atol=1e-5)
+    conv_learn = Orthogonal1x1Conv(key, n_channels)
+    Q_learn = conv_learn._get_rotation_matrix()
+    eye = jnp.eye(n_channels)
+    assert jnp.allclose(Q_learn @ Q_learn.T, eye, atol=1e-5)
+    assert jnp.allclose(Q_learn.T @ Q_learn, eye, atol=1e-5)
+
+    Q, _ = jnp.linalg.qr(jr.normal(jr.fold_in(key, 2), (n_channels, n_channels)))
+    conv_fixed = Orthogonal1x1Conv(key, n_channels, fixed_matrix=Q)
+    Q_fixed = conv_fixed._get_rotation_matrix()
+    assert jnp.allclose(Q_fixed @ Q_fixed.T, eye, atol=1e-5)
 
 
 def test_orthogonal1x1conv_preserves_norm(key):
-    """Test that orthogonal 1x1 conv preserves vector norm."""
+    """Orthogonal transformation preserves vector norm."""
     n_channels = 4
-    conv = Orthogonal1x1Conv(key, n_channels, fixed=False)
+    conv = Orthogonal1x1Conv(key, n_channels)
     x = jr.normal(key, (n_channels,))
     y, _ = conv.transform_and_log_det(x)
-    # Orthogonal transformation preserves norm
     assert jnp.allclose(jnp.linalg.norm(x), jnp.linalg.norm(y), atol=1e-5)
+
+
+def test_orthogonal1x1conv_jit(key):
+    """Both modes survive eqx.filter_jit (guards against PyTree-structure bugs)."""
+    n_channels = 4
+    x = jr.normal(key, (n_channels,))
+
+    @eqx.filter_jit
+    def forward(m, x):
+        return m.transform_and_log_det(x)
+
+    conv_learn = Orthogonal1x1Conv(key, n_channels)
+    y1, ld1 = forward(conv_learn, x)
+    assert y1.shape == (n_channels,) and ld1 == 0.0
+
+    Q, _ = jnp.linalg.qr(jr.normal(jr.fold_in(key, 3), (n_channels, n_channels)))
+    conv_fixed = Orthogonal1x1Conv(key, n_channels, fixed_matrix=Q)
+    y2, ld2 = forward(conv_fixed, x)
+    assert y2.shape == (n_channels,) and ld2 == 0.0
+
+
+def test_orthogonal1x1conv_matches_orthogonal_rotation_with_shared_params(key):
+    """Learnable Orthogonal1x1Conv and OrthogonalRotation compute the same Q
+    when they share ``skew_params`` — documents that the two classes are the
+    same family, just with different init conventions."""
+    n_channels = 4
+    conv = Orthogonal1x1Conv(key, n_channels)
+    # Copy skew_params across so both classes see identical inputs.
+    rot = OrthogonalRotation(shape=(n_channels,))
+    rot = eqx.tree_at(lambda m: m.skew_params, rot, conv._rotation.skew_params)
+    assert jnp.allclose(
+        conv._get_rotation_matrix(),
+        rot._get_rotation_matrix(),
+        atol=1e-6,
+    )

@@ -4,93 +4,142 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
 from flowjax.bijections import AbstractBijection
-from jax import Array
+from jax import Array, lax
 from jaxtyping import ArrayLike, PRNGKeyArray
+
+from gauss_flows._src.transforms.bijections.linear.rotation import OrthogonalRotation
 
 
 class Orthogonal1x1Conv(AbstractBijection):
-    """Orthogonal 1x1 convolution via Cayley parameterization.
+    """Orthogonal 1x1 convolution (Cayley-parameterised orthogonal mixing).
 
-    Parameterizes an orthogonal linear mixing across channels/features using
-    the Cayley map of skew-symmetric matrices. The weight matrix Q is orthogonal
-    and has log-det = 0, making it volume-preserving. This is useful for
-    Gaussianization flows where orthogonal transformations are preferred.
+    For a ``(n_channels,)`` single event, applies an orthogonal matrix Q as
+    ``y = Q·x``; the inverse is ``x = Q.T·y``; ``log|det Q| = 0`` (volume-
+    preserving). Callers that operate on ``(H, W, C)`` image events should
+    vmap externally — this matches the single-event convention shared with
+    :class:`Invertible1x1Conv` and the rest of the package (see
+    ``CLAUDE.md``).
 
-    The Cayley map constructs an orthogonal matrix from a skew-symmetric matrix A:
-    Q = (I - A)(I + A)^{-1}, where A^T = -A.
+    **Learnable path** (default): delegates to :class:`OrthogonalRotation`'s
+    Cayley parameterisation ``Q = (I − A)(I + A)^{-1}`` with skew-symmetric
+    ``A``. Unlike ``OrthogonalRotation``'s zero init (which starts at
+    ``Q = I``), this class re-initialises the skew parameters with small
+    Gaussian noise so the initial mixing is near-identity but not exactly
+    identity — breaking the symmetry that would otherwise pin gradients to
+    zero for a Householder-like conditioner.
+
+    **Fixed path** (``fixed_matrix`` supplied): holds Q constant at the
+    supplied matrix. Gradients into ``fixed_matrix`` are blocked via
+    :func:`jax.lax.stop_gradient`, so Optax steps against a frozen flow
+    leave the matrix exactly unchanged — unlike plain :class:`FixedRotation`
+    whose ``matrix`` field is a mutable leaf.
 
     Args:
-        key: JAX random key (unused if fixed=True).
-        n_channels: Number of channels/features.
-        fixed: If True, initializes as identity and makes the transform non-trainable.
-               If False (default), uses learnable Cayley parameterization.
+        key: PRNG key used for learnable Cayley initialisation. Ignored
+            when ``fixed_matrix`` is supplied (but still required for API
+            symmetry with the other learnable bijections in this
+            subpackage).
+        n_channels: Number of channels / feature dimensions.
+        fixed_matrix: Optional pre-computed ``(n_channels, n_channels)``
+            orthogonal matrix (e.g. from PCA or a random SVD rotation).
+            When provided, the layer is non-trainable — gradients through
+            the stored matrix are blocked. When ``None`` (default), the
+            layer is Cayley-parameterised and trainable.
 
     Shape:
-        ``x``: ``(n_channels,)`` → ``y``: ``(n_channels,)``
-        ``log_det``: ``()`` (always 0)
+        - Input  ``x``:  ``(n_channels,)``
+        - Output ``y``:  ``(n_channels,)``
+        - ``log_det``:   scalar (always ``0``)
+
+    Note:
+        The public surface is a superset of
+        :class:`OrthogonalRotation`: the learnable path produces the same
+        family of orthogonal matrices (same ``skew_params`` shape, same
+        Cayley map), with a more flow-literature-friendly name and a
+        genuinely-fixed alternative branch. Prefer
+        :class:`OrthogonalRotation` if you want the exact zero-init
+        (``Q = I`` at step 0) used by classic RBIG flows; prefer this
+        class when small-random init or a pre-computed fixed rotation is
+        wanted.
 
     Example:
+        Learnable (Cayley-parameterised, near-identity init):
+
         >>> import jax.random as jr
         >>> from gauss_flows import Orthogonal1x1Conv
-        >>> key = jr.PRNGKey(0)
-        >>> # Learnable orthogonal 1x1 conv
-        >>> conv = Orthogonal1x1Conv(key, n_channels=4)
-        >>> x = jr.normal(key, (4,))
-        >>> y, log_det = conv.transform_and_log_det(x)
+        >>> conv = Orthogonal1x1Conv(jr.key(0), n_channels=4)
+        >>> y, log_det = conv.transform_and_log_det(jr.normal(jr.key(1), (4,)))
         >>> assert y.shape == (4,) and log_det == 0.0
-        >>> # Fixed (identity) orthogonal 1x1 conv
-        >>> conv_fixed = Orthogonal1x1Conv(key, n_channels=4, fixed=True)
-        >>> y_fixed, _ = conv_fixed.transform_and_log_det(x)
-        >>> assert jnp.allclose(x, y_fixed)
+
+        Fixed (pre-computed orthogonal matrix, non-trainable):
+
+        >>> import jax.numpy as jnp
+        >>> Q, _ = jnp.linalg.qr(jr.normal(jr.key(2), (4, 4)))
+        >>> conv_fixed = Orthogonal1x1Conv(jr.key(0), n_channels=4, fixed_matrix=Q)
+        >>> y_fixed, _ = conv_fixed.transform_and_log_det(jr.normal(jr.key(3), (4,)))
+        >>> # Fixed matrix survives gradient steps unchanged (see tests).
     """
 
     shape: tuple[int, ...]
     cond_shape: ClassVar[None] = None
-    skew_params: Array | None  # Upper triangle of skew-symmetric matrix (None if fixed)
-    fixed_matrix: Array | None  # Fixed orthogonal matrix (None if learnable)
+    _rotation: OrthogonalRotation | None
+    fixed_matrix: Array | None
 
-    def __init__(self, key: PRNGKeyArray, n_channels: int, *, fixed: bool = False):
+    def __init__(
+        self,
+        key: PRNGKeyArray,
+        n_channels: int,
+        *,
+        fixed_matrix: ArrayLike | None = None,
+    ):
         self.shape = (n_channels,)
-        if fixed:
-            # Fixed mode: use identity matrix
-            self.skew_params = None
-            self.fixed_matrix = jnp.eye(n_channels)
-        else:
-            # Learnable mode: initialize with small random skew-symmetric parameters
+        if fixed_matrix is None:
+            # Learnable path — delegate to OrthogonalRotation's Cayley
+            # construction, replacing its zero init with small-random skew
+            # params so the initial Q is near-identity (breaks symmetry).
+            base = OrthogonalRotation(shape=self.shape)
             n_params = n_channels * (n_channels - 1) // 2
-            self.skew_params = jr.normal(key, (n_params,)) * 0.01
+            self._rotation = eqx.tree_at(
+                lambda m: m.skew_params,
+                base,
+                jr.normal(key, (n_params,)) * 0.01,
+            )
             self.fixed_matrix = None
+        else:
+            m = jnp.asarray(fixed_matrix, dtype=float)
+            if m.shape != (n_channels, n_channels):
+                raise ValueError(
+                    "fixed_matrix must have shape "
+                    f"({n_channels}, {n_channels}); got {m.shape}."
+                )
+            self._rotation = None
+            self.fixed_matrix = m
 
     def _get_rotation_matrix(self) -> Array:
-        """Construct the orthogonal rotation matrix."""
-        if self.fixed_matrix is not None:
-            # Fixed mode: return the fixed matrix
-            return self.fixed_matrix
+        """Return the orthogonal matrix Q for the current forward/inverse call.
 
-        # Learnable mode: Cayley map
-        n_dims = self.shape[0]
-        A = jnp.zeros((n_dims, n_dims))
-        idx = jnp.tril_indices(n_dims, k=-1)
-        A = A.at[idx].set(self.skew_params)
-        A = A - A.T  # make skew-symmetric: A^T = -A
-        eye = jnp.eye(n_dims)
-        # Cayley map: Q = (I - A)(I + A)^{-1}
-        # Compute as: Q = solve(I + A, I - A)^T
-        Q = jnp.linalg.solve(eye + A, eye - A).T
-        return Q
+        Shape: ``(n_channels, n_channels)``. When fixed, gradients through
+        Q are blocked via ``lax.stop_gradient`` so the matrix is genuinely
+        non-trainable.
+        """
+        if self.fixed_matrix is not None:
+            return lax.stop_gradient(self.fixed_matrix)
+        # Learnable path: reuse OrthogonalRotation's Cayley construction.
+        return self._rotation._get_rotation_matrix()  # type: ignore[union-attr]
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
         Q = self._get_rotation_matrix()
         y = Q @ jnp.asarray(x)
-        # Orthogonal matrices have det = ±1, so log|det| = 0
+        # Orthogonal => |det Q| = 1 => log|det| = 0 exactly.
         return y, jnp.zeros(())
 
     def inverse_and_log_det(self, y: ArrayLike, condition=None):
         Q = self._get_rotation_matrix()
-        # Inverse of orthogonal matrix is its transpose
+        # Orthogonal matrix inverse is its transpose.
         x = Q.T @ jnp.asarray(y)
         return x, jnp.zeros(())
 
