@@ -8,6 +8,7 @@ from gauss_flows._src.transforms.conv import (
     ActNorm,
     HaarWavelet,
     Invertible1x1Conv,
+    OrthogonalConvExponential,
     Squeeze,
 )
 from gauss_flows._src.transforms.coupling import (
@@ -62,6 +63,7 @@ __all__ = [
     "LULinearPermute",
     "MixtureGaussianCDF",
     "MixtureLogisticCDF",
+    "OrthogonalConvExponential",
     "OrthogonalRotation",
     "PeriodicShift",
     "PeriodicWrap",

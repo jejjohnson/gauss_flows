@@ -4,11 +4,14 @@ These bijections implement invertible convolution operations used in
 image-based normalizing flows (e.g., Glow-style architectures).
 """
 
+from __future__ import annotations
+
 from typing import ClassVar
 
 import jax.numpy as jnp
+import jax.random as jr
 from flowjax.bijections import AbstractBijection
-from jax import Array
+from jax import Array, lax
 from jaxtyping import ArrayLike, PRNGKeyArray
 
 
@@ -33,8 +36,6 @@ class Invertible1x1Conv(AbstractBijection):
     log_diag_u: Array  # log of diagonal of U (ensures non-zero det)
 
     def __init__(self, key: PRNGKeyArray, n_channels: int):
-        import jax.random as jr
-
         self.shape = (n_channels,)
         n = n_channels
         # Initialize near identity: small random off-diagonals, unit diagonal
@@ -194,9 +195,346 @@ class Squeeze(AbstractBijection):
         return jnp.asarray(y).reshape(self.shape), jnp.zeros(())
 
 
+class OrthogonalConvExponential(AbstractBijection):
+    r"""Orthogonal convolution via the exponential of a skew-symmetric operator.
+
+    Motivation
+    ----------
+    Glow-style image flows need an invertible linear mixer across pixels *and*
+    channels whose log-determinant is cheap to evaluate. A convolution with a
+    spatially-extended kernel has the desired receptive field, but is not
+    invertible in general. The convolution exponential (Hoogeboom et al., 2020)
+    lifts a possibly non-invertible conv operator :math:`M` to
+
+    .. math::
+
+        \exp(M) \;=\; \sum_{k=0}^{\infty} \frac{M^k}{k!},
+
+    which is *always* invertible (its inverse is :math:`\exp(-M)`). Taking
+    :math:`M` skew-symmetric (:math:`M^\top = -M`) further makes :math:`\exp(M)`
+    an **orthogonal** matrix, so the bijection is norm-preserving and has
+    Jacobian determinant exactly :math:`+1`.
+
+    Construction
+    ------------
+    **1. Skew-symmetric conv operator.** For a :math:`(k_h, k_w, C, C)` kernel
+    :math:`K` indexed relative to its center, the induced circular-convolution
+    Toeplitz operator :math:`M_K` acting on flattened images has the transpose
+
+    .. math::
+
+        (M_K^\top)_{p,q} \;=\; K[k_h{-}1{-}i,\,k_w{-}1{-}j,\,b,\,a]\quad
+            \text{when}\quad
+        (M_K)_{p,q} \;=\; K[i,\,j,\,a,\,b].
+
+    Skew-symmetry :math:`M_K = -M_K^\top` therefore holds iff
+
+    .. math::
+
+        K[i, j, a, b] \;=\; -\,K[k_h{-}1{-}i,\,k_w{-}1{-}j,\,b,\,a].
+
+    We enforce this exactly by setting :math:`K = W - \widetilde{W}` where
+    :math:`\widetilde{W}[i,j,a,b] = W[k_h{-}1{-}i,\,k_w{-}1{-}j,\,b,\,a]`
+    (flip spatial axes + swap input/output channels). See :meth:`_skew`.
+
+    **2. Truncated Taylor series.** The forward map applies :math:`\exp(M_K)`
+    via the :math:`N`-term truncation
+
+    .. math::
+
+        p_N(M_K)\,x
+            \;=\; \sum_{k=0}^{N} \frac{M_K^k\, x}{k!}
+            \;=\; \bigl(I + M_K + \tfrac{1}{2!}M_K^2 + \dots\bigr)\,x,
+
+    which we compute with a :func:`jax.lax.scan` that accumulates
+    :math:`r_{k+1} = r_k + \frac{1}{k+1} M_K\, r_k` (see
+    :meth:`_convolution_exponential`). The truncation error is
+
+    .. math::
+
+        \lVert p_N(M) - \exp(M) \rVert
+            \;=\; \mathcal{O}\!\bigl(\|M\|^{N+1}/(N{+}1)!\bigr),
+
+    so with ``n_terms = 8`` and ``||M|| <= 1`` the residual is below
+    :math:`1/9! \approx 2.8\times 10^{-6}`.
+
+    **3. Spectral normalization.** To keep :math:`\|M_K\| \leq 1`, we estimate
+    the operator norm via image-space power iteration and divide by
+    :math:`\max(\sigma, 1)`. Gradients are blocked through the
+    :math:`\sigma`-estimate (:func:`jax.lax.stop_gradient`), so training does
+    *not* differentiate through the power iteration itself — only through the
+    explicit ``kernel / sigma`` rescale. See :meth:`_spectral_normalize`.
+
+    **4. Log-determinant.** Because :math:`M_K` is skew-symmetric its trace
+    vanishes, and
+
+    .. math::
+
+        \log\!\bigl|\det \exp(M_K)\bigr|
+            \;=\; \operatorname{tr}(M_K) \;=\; 0
+
+    exactly. We return ``jnp.zeros(())`` — the truncated operator's log-det
+    differs from this by :math:`\mathcal{O}(\|M\|^{N+1}/(N{+}1)!)`, the same
+    negligible quantity as the round-trip residual.
+
+    **5. Inverse.** Since :math:`\exp(M)^{-1} = \exp(-M)` for any :math:`M`,
+    the inverse applies the same truncated series with negated kernel.
+    Composing :math:`p_N(-M_K)\circ p_N(M_K)` leaves an
+    :math:`\mathcal{O}(\|M\|^{N+1}/(N{+}1)!)` residual, acceptable for any
+    reasonable :math:`N`.
+
+    Shapes
+    ------
+    ::
+
+        x, y                     : (H, W, C)
+        weight / skew kernel K   : (k_h, k_w, C, C) in flowjax/JAX HWIO
+        log_det                  : ()                 (scalar, always 0)
+
+    Args:
+        key: JAX random key for kernel initialization.
+        shape: Image shape ``(H, W, C)`` — single event (no batch axis).
+        kernel_size: Spatial kernel size (must be a positive **odd** integer
+            so the kernel has a unique center pixel).
+        n_terms: Number of Taylor-series terms ``N`` (``>= 1``). Truncation
+            error scales as :math:`\mathcal{O}(1 / (N{+}1)!)`.
+        n_power_iterations: Power-iteration steps for the spectral-norm
+            estimate (``>= 1``). Two iterations is usually enough because
+            :math:`\sigma` only needs an upper bound, not high accuracy.
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> key = jr.key(0)
+        >>> transform = OrthogonalConvExponential(key, shape=(8, 8, 3))
+        >>> x = jr.normal(key, (8, 8, 3))
+        >>> y, log_det = transform.transform_and_log_det(x)
+        >>> x_rec, log_det_inv = transform.inverse_and_log_det(y)
+        >>> assert jnp.allclose(x, x_rec, atol=1e-4)
+        >>> assert jnp.isclose(log_det, 0.0)
+
+    References:
+        Hoogeboom, E., van den Berg, R., & Welling, M.
+        *The Convolution Exponential and Generalized Sylvester Flows*,
+        NeurIPS 2020. https://arxiv.org/abs/2006.01910
+    """
+
+    shape: tuple[int, ...]
+    cond_shape: ClassVar[None] = None
+    weight: Array  # (k_h, k_w, C, C) free parameter; skew kernel derived per-call
+    n_terms: int
+    n_power_iterations: int
+
+    def __init__(
+        self,
+        key: PRNGKeyArray,
+        shape: tuple[int, int, int],
+        *,
+        kernel_size: int = 3,
+        n_terms: int = 8,
+        n_power_iterations: int = 2,
+    ):
+        if len(shape) != 3:
+            raise ValueError(
+                f"OrthogonalConvExponential expects shape (H, W, C); got {shape!r}."
+            )
+        if kernel_size < 1 or kernel_size % 2 == 0:
+            raise ValueError(
+                f"kernel_size must be a positive odd integer; got {kernel_size}."
+            )
+        if n_terms < 1:
+            raise ValueError(f"n_terms must be >= 1; got {n_terms}.")
+        if n_power_iterations < 1:
+            raise ValueError(
+                f"n_power_iterations must be >= 1; got {n_power_iterations}."
+            )
+
+        self.shape = tuple(shape)
+        c = int(shape[-1])
+        self.n_terms = int(n_terms)
+        self.n_power_iterations = int(n_power_iterations)
+        # Small init: the skew kernel K = W - flip(W)^T doubles scale, and
+        # spectral norm caps ||K|| <= 1, so near-identity behavior at step 0.
+        # weight: (k_h, k_w, C, C)
+        self.weight = jr.normal(key, (kernel_size, kernel_size, c, c)) * 0.05
+
+    @staticmethod
+    def _skew(weight: Array) -> Array:
+        r"""Project a free weight tensor to a skew-symmetric conv kernel.
+
+        Given free parameter ``W`` of shape ``(k_h, k_w, C, C)``, returns
+
+        .. math::
+
+            K \;=\; W \,-\, \widetilde{W},\qquad
+            \widetilde{W}[i, j, a, b] \;=\; W[k_h{-}1{-}i,\,k_w{-}1{-}j,\,b,\,a].
+
+        Under circular padding, the induced Toeplitz operator ``M_K`` satisfies
+        :math:`M_K = -M_K^\top`, so :math:`\exp(M_K)` is orthogonal.
+
+        Shape:
+            ``weight``: ``(k_h, k_w, C, C)``
+            returns:    ``(k_h, k_w, C, C)`` (same shape, skew-symmetric)
+        """
+        # flip spatial dims -> reverse (i, j) indices relative to center;
+        # swapaxes(2, 3) -> swap input/output channel axes (the "transpose" ^T).
+        flipped = jnp.swapaxes(jnp.flip(weight, axis=(0, 1)), 2, 3)
+        return weight - flipped  # (k_h, k_w, C, C)
+
+    def _circular_conv(self, x: Array, kernel: Array) -> Array:
+        """Single-event circular 2D convolution.
+
+        Pads ``x`` with wrap-mode boundary so that VALID-padded convolution
+        produces the circular (periodic) result, then delegates to
+        :func:`jax.lax.conv_general_dilated` with NHWC/HWIO layout.
+
+        Shape:
+            ``x``      : ``(H, W, C_in)``
+            ``kernel`` : ``(k_h, k_w, C_in, C_out)`` (HWIO)
+            returns    : ``(H, W, C_out)``
+        """
+        k_h, k_w = kernel.shape[0], kernel.shape[1]
+        pad_h, pad_w = k_h // 2, k_w // 2
+        # x:        (H, W, C)          -> x_padded: (H + 2*pad_h, W + 2*pad_w, C)
+        x_padded = jnp.pad(x, ((pad_h, pad_h), (pad_w, pad_w), (0, 0)), mode="wrap")
+        # x_padded[None]: (1, Hp, Wp, C) -> y: (1, H, W, C_out) under VALID padding.
+        y = lax.conv_general_dilated(
+            x_padded[None, ...],
+            kernel,
+            window_strides=(1, 1),
+            padding="VALID",
+            dimension_numbers=("NHWC", "HWIO", "NHWC"),
+        )
+        return y[0]  # (H, W, C_out)
+
+    def _circular_conv_transpose(self, x: Array, kernel: Array) -> Array:
+        r"""Mathematical transpose (adjoint) of circular conv.
+
+        For a circular conv with kernel :math:`K` the operator adjoint is the
+        circular conv with the *index-flipped, channel-transposed* kernel
+        :math:`K^\top[i, j, o, c] = K[k_h{-}1{-}i, k_w{-}1{-}j, c, o]`.
+
+        Shape:
+            ``x``      : ``(H, W, C_out)``
+            ``kernel`` : ``(k_h, k_w, C_in, C_out)``
+            returns    : ``(H, W, C_in)``
+        """
+        # Flip spatial -> reverse (i, j); swapaxes(2, 3) -> swap I<->O.
+        kernel_t = jnp.swapaxes(jnp.flip(kernel, axis=(0, 1)), 2, 3)
+        return self._circular_conv(x, kernel_t)
+
+    def _spectral_normalize(self, kernel: Array) -> Array:
+        r"""Clip kernel spectral norm to at most 1 via power iteration.
+
+        Estimates :math:`\sigma \approx \|M_K\|_{op}` using the standard SVD
+        power iteration in image space: alternately apply :math:`M_K` and
+        :math:`M_K^\top`, renormalizing after each step. The estimate is
+        wrapped in :func:`jax.lax.stop_gradient` so backprop does *not*
+        differentiate through the iteration itself — gradients flow only
+        through the explicit ``kernel / sigma`` rescale.
+
+        After :math:`n` iterations, :math:`\sigma` converges to
+        :math:`\sigma_1 = \|M_K\|` with ratio :math:`(\sigma_2/\sigma_1)^n`.
+        Two iterations suffice because we only need an *upper bound* (we
+        take :math:`\max(\sigma, 1)`), not high accuracy.
+
+        Shape:
+            ``kernel`` : ``(k_h, k_w, C, C)``
+            ``u``, ``v`` (power-iteration vectors): ``(H, W, C)``
+            returns    : ``(k_h, k_w, C, C)``  (rescaled, grad-flowing)
+        """
+        h, w, c = self.shape
+        # Seed: unit-norm constant vector; any non-orthogonal seed converges.
+        # u0: (H, W, C)
+        u0 = jnp.ones((h, w, c)) / jnp.sqrt(float(h * w * c))
+
+        # Block gradients through the power iteration: we only want grads
+        # through the *rescale* `kernel / sigma`, not through the estimate.
+        kernel_sg = lax.stop_gradient(kernel)
+
+        def body(_, u_vec):
+            # v = M^T u, normalized  -> singular direction on input side.
+            v_vec = self._circular_conv_transpose(u_vec, kernel_sg)  # (H, W, C)
+            v_vec = v_vec / (jnp.linalg.norm(v_vec) + 1e-8)
+            # u = M v, normalized    -> singular direction on output side.
+            u_new = self._circular_conv(v_vec, kernel_sg)  # (H, W, C)
+            return u_new / (jnp.linalg.norm(u_new) + 1e-8)
+
+        # After n_power_iterations steps, u ~ leading left-singular vector.
+        u = lax.fori_loop(0, self.n_power_iterations, body, u0)  # (H, W, C)
+        # Final pairing to estimate sigma = ||M v|| where v = M^T u normalized.
+        v = self._circular_conv_transpose(u, kernel_sg)  # (H, W, C)
+        v = v / (jnp.linalg.norm(v) + 1e-8)
+        sigma = jnp.linalg.norm(self._circular_conv(v, kernel_sg))  # scalar
+
+        # max(sigma, 1): only rescale if the norm *exceeds* 1; otherwise
+        # leave the kernel alone so near-identity init isn't perturbed.
+        scale = jnp.maximum(lax.stop_gradient(sigma), 1.0)
+        return kernel / (scale + 1e-8)  # (k_h, k_w, C, C)
+
+    def _convolution_exponential(self, x: Array, kernel: Array) -> Array:
+        r"""Apply the truncated matrix exponential :math:`p_N(M_K)\,x`.
+
+        Computes the partial Taylor sum
+
+        .. math::
+
+            r_N \;=\; \sum_{k=0}^{N} \frac{M_K^k\, x}{k!},
+
+        via the recurrence :math:`t_0 = x`, :math:`t_{k+1} = \tfrac{1}{k+1} M_K\, t_k`,
+        :math:`r_{k+1} = r_k + t_{k+1}`. Each iteration costs one circular conv
+        (``O(H W k_h k_w C^2)``); total cost scales linearly in ``n_terms``.
+
+        Shape:
+            ``x``, ``kernel``, returns as in :meth:`_circular_conv`.
+        """
+
+        def body(carry, i):
+            prod, acc = carry  # both (H, W, C)
+            # t_{k+1} = (1/(k+1)) * M_K * t_k
+            prod = self._circular_conv(prod, kernel) / (i + 1)
+            return (prod, acc + prod), None
+
+        # carry0 = (t_0, r_0) = (x, x)  — the k=0 term is I*x = x.
+        (_, result), _ = lax.scan(body, (x, x), jnp.arange(self.n_terms))
+        return result  # (H, W, C)
+
+    def transform_and_log_det(self, x: ArrayLike, condition=None):
+        """Forward map :math:`y = \\exp(M_K)\\,x` and scalar log-det (=0).
+
+        Shape:
+            ``x``    : ``(H, W, C)``
+            returns  : ``((H, W, C), ())``
+        """
+        x_arr = jnp.asarray(x)  # (H, W, C)
+        # 1) W -> K (skew)  2) K -> K / max(sigma, 1)  3) apply p_N(M_K)
+        kernel = self._spectral_normalize(self._skew(self.weight))
+        y = self._convolution_exponential(x_arr, kernel)  # (H, W, C)
+        # Skew-symmetric M  =>  tr(M) = 0  =>  log|det exp(M)| = 0 exactly.
+        return y, jnp.zeros(())
+
+    def inverse_and_log_det(self, y: ArrayLike, condition=None):
+        """Inverse map :math:`x = \\exp(-M_K)\\,y` and scalar log-det (=0).
+
+        Uses the identity :math:`\\exp(M)^{-1} = \\exp(-M)` — truncated at
+        the same ``n_terms`` as forward, so the round-trip residual is
+        ``O(||M||^{n_terms+1} / (n_terms+1)!)``.
+
+        Shape:
+            ``y``    : ``(H, W, C)``
+            returns  : ``((H, W, C), ())``
+        """
+        y_arr = jnp.asarray(y)  # (H, W, C)
+        kernel = self._spectral_normalize(self._skew(self.weight))
+        # exp(-M_K) via the same truncation with negated kernel.
+        x = self._convolution_exponential(y_arr, -kernel)  # (H, W, C)
+        return x, jnp.zeros(())
+
+
 __all__ = [
     "ActNorm",
     "HaarWavelet",
     "Invertible1x1Conv",
+    "OrthogonalConvExponential",
     "Squeeze",
 ]
