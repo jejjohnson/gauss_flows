@@ -13,6 +13,7 @@ from gauss_flows._src.transforms.conv import (
 from gauss_flows._src.transforms.coupling import (
     ActNorm1D,
     AffineCoupling,
+    BatchNorm,
     DeepSigmoidCoupling,
     RQSplineCoupling,
 )
@@ -50,6 +51,7 @@ __all__ = [
     "ActNorm1D",
     "AffineCoupling",
     "Augment",
+    "BatchNorm",
     "CircularRQSplineCoupling",
     "CircularRationalQuadraticSpline",
     "DeepSigmoidCoupling",
