@@ -21,6 +21,7 @@ from gauss_flows._src.numpyro_compat import FlowDist
 from gauss_flows._src.numpyro_guide import FlowGuide
 from gauss_flows._src.train import fit_gaussianization_flow
 from gauss_flows._src.transforms import (
+    VAE,
     ActNorm,
     ActNorm1D,
     AffineCoupling,
@@ -56,6 +57,7 @@ from gauss_flows._src.transforms.base import AbstractStochastic, AbstractSurject
 
 
 __all__ = [
+    "VAE",
     "AbstractStochastic",
     "AbstractSurjection",
     "ActNorm",

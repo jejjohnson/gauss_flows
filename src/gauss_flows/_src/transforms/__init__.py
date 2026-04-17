@@ -36,7 +36,7 @@ from gauss_flows._src.transforms.rotation import (
     LULinearPermute,
     OrthogonalRotation,
 )
-from gauss_flows._src.transforms.stochastic import StochasticPermutation
+from gauss_flows._src.transforms.stochastic import VAE, StochasticPermutation
 from gauss_flows._src.transforms.surjections import (
     Augment,
     SimpleAbsSurjection,
@@ -47,6 +47,7 @@ from gauss_flows._src.transforms.surjections import (
 
 
 __all__ = [
+    "VAE",
     "ActNorm",
     "ActNorm1D",
     "AffineCoupling",
