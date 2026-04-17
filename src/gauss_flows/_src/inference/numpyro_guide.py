@@ -9,8 +9,8 @@ from flowjax.experimental.numpyro import register_params
 from numpyro.infer.autoguide import AutoContinuous
 from numpyro.infer.initialization import init_to_uniform
 
-from gauss_flows._src.flows import gaussianization_flow
-from gauss_flows._src.numpyro_compat import FlowDist
+from gauss_flows._src.flows.gaussianization import gaussianization_flow
+from gauss_flows._src.inference.numpyro_compat import FlowDist
 
 
 class FlowGuide(AutoContinuous):

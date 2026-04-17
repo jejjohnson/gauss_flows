@@ -10,6 +10,7 @@ from gauss_flows._src.flows import (
     gaussianization_flow,
     iterative_rbig,
 )
+from gauss_flows._src.inference import FlowDist, FlowGuide, fit_gaussianization_flow
 from gauss_flows._src.info_theory import (
     entropy,
     kl_divergence,
@@ -17,9 +18,6 @@ from gauss_flows._src.info_theory import (
     negentropy,
     total_correlation,
 )
-from gauss_flows._src.numpyro_compat import FlowDist
-from gauss_flows._src.numpyro_guide import FlowGuide
-from gauss_flows._src.train import fit_gaussianization_flow
 from gauss_flows._src.transforms import (
     VAE,
     ActNorm,

@@ -19,6 +19,44 @@ Gaussianization flows in JAX, built on top of the
 - **Information Theory**: Entropy, total correlation, mutual information, KL divergence, negentropy
 - **NumPyro Integration**: `FlowDist` wrapper for use in NumPyro probabilistic programs
 
+## Package layout
+
+The implementation follows the SurVAE Flows taxonomy (Nielsen et al. 2020) —
+every transform is classified as a bijection, surjection, or stochastic
+transform, and each category is further split by technique:
+
+```text
+_src/
+├── transforms/
+│   ├── base.py                        # AbstractSurjection / AbstractStochastic / _IdentitySurjection
+│   ├── bijections/
+│   │   ├── coupling/                  # Affine / Spline / CircularSpline / DeepSigmoid
+│   │   ├── elementwise/               # Histogram / InverseGauss / MixtureCDFs / (Circular)Spline
+│   │   ├── linear/                    # Rotation / LU / Conv1x1 / ConvExp / Haar
+│   │   ├── normalization/             # ActNorm(2D+1D) / BatchNorm
+│   │   ├── reshape/                   # Squeeze
+│   │   ├── periodic/                  # PeriodicShift / PeriodicWrap (+ shared _utils)
+│   │   └── classic/                   # PlanarFlow / SylvesterFlow
+│   ├── surjections/
+│   │   ├── dimension/                 # Augment / Slice
+│   │   ├── abs.py / sort.py / pool.py
+│   └── stochastic/
+│       └── vae.py / permutation.py
+├── flows/
+│   ├── survae.py                      # SurVAEFlow container
+│   ├── gaussianization.py             # gaussianization_flow, coupling_gaussianization_flow
+│   └── rbig.py                        # iterative_rbig
+├── inference/
+│   ├── numpyro_compat.py              # FlowDist
+│   ├── numpyro_guide.py               # FlowGuide
+│   └── train.py                       # fit_gaussianization_flow
+└── nn/                                # reserved placeholder for future NN building blocks
+```
+
+The public `gauss_flows.*` surface re-exports every leaf class, so this
+layout is internal — import from `gauss_flows` directly rather than the
+`_src/` paths.
+
 ## Installation
 
 ```bash
