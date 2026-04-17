@@ -43,7 +43,10 @@ plugins:
 
 nav:
   - Home: index.md
+  - Examples:
+      - Toroidal Circular Flow: notebooks/torus_circular_flow.ipynb
   - API Reference: api/reference.md
+  - Contributing: contributing.md
 
 markdown_extensions:
   - admonition

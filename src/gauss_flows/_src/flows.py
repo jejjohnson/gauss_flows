@@ -244,6 +244,12 @@ class SurVAEFlow(eqx.Module):
             whose event shape matches the start of the forward chain.
         transforms: Tuple of bijections / surjections, applied left-to-right
             in the forward direction.
+        data_shape: Event shape of the data (output of the forward chain /
+            input to ``log_prob``). Defaults to ``base_dist.shape`` for
+            shape-preserving chains; **must** be supplied explicitly when
+            the chain contains a surjection that changes dimensionality
+            (e.g. :class:`Slice`, :class:`Augment`,
+            :class:`SimpleMaxPoolSurjection2d`).
 
     Properties:
         lower_bound: ``True`` iff at least one surjection in the chain
@@ -253,15 +259,18 @@ class SurVAEFlow(eqx.Module):
 
     base_dist: AbstractDistribution
     transforms: tuple[AbstractBijection | AbstractSurjection, ...]
+    data_shape: tuple[int, ...]
 
     def __init__(
         self,
         base_dist: AbstractDistribution,
         transforms: tuple[AbstractBijection | AbstractSurjection, ...]
         | list[AbstractBijection | AbstractSurjection],
+        data_shape: tuple[int, ...] | None = None,
     ):
         self.base_dist = base_dist
         self.transforms = tuple(transforms)
+        self.data_shape = data_shape if data_shape is not None else base_dist.shape
 
     @property
     def lower_bound(self) -> bool:
@@ -323,23 +332,23 @@ class SurVAEFlow(eqx.Module):
     ) -> Array:
         """Evaluate ``log p(x)`` (or its lower bound if any surjection is lower-bound).
 
-        Accepts batched inputs of shape ``sample_shape + base_dist.shape``;
-        the leading ``sample_shape`` dimensions are vmapped over and each
-        sample receives its own key derived from ``key``. For deterministic
-        chains (bijections + non-stochastic surjections) the key is unused
-        but still consumed by the dispatch.
+        Accepts batched inputs of shape ``sample_shape + data_shape``; the
+        leading ``sample_shape`` dimensions are vmapped over and each sample
+        receives its own key derived from ``key``. For deterministic chains
+        (bijections + non-stochastic surjections) the key is unused but still
+        consumed by the dispatch.
         """
         cond = None if condition is None else jnp.asarray(condition)
         x = jnp.asarray(x)
 
-        event_shape = self.base_dist.shape
-        n_event = len(event_shape)
-        if n_event > 0 and x.shape[-n_event:] != event_shape:
+        n_data = len(self.data_shape)
+        # x: (*sample_shape, *data_shape) -> sample_shape: (*sample_shape,)
+        if n_data > 0 and x.shape[-n_data:] != self.data_shape:
             raise ValueError(
-                f"x trailing shape {x.shape[-n_event:]} does not match "
-                f"base_dist.shape {event_shape}."
+                f"x trailing shape {x.shape[-n_data:]} does not match "
+                f"data_shape {self.data_shape}."
             )
-        sample_shape = x.shape if n_event == 0 else x.shape[:-n_event]
+        sample_shape = x.shape if n_data == 0 else x.shape[:-n_data]
 
         if sample_shape == ():
             return self._single_log_prob(x, key, cond)
@@ -347,7 +356,8 @@ class SurVAEFlow(eqx.Module):
         n = 1
         for s in sample_shape:
             n *= s
-        flat = x.reshape((n, *event_shape))
+        # flat: (n, *data_shape) for the vmap.
+        flat = x.reshape((n, *self.data_shape))
         keys = jr.split(key, n)
         out = jax.vmap(lambda xi, ki: self._single_log_prob(xi, ki, cond))(flat, keys)
         return out.reshape(sample_shape)

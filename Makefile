@@ -62,7 +62,8 @@ check-env-%:
 # Phony declarations
 # ---------------------------------------------------------------------------
 .PHONY: help install init lint format typecheck test test-fast test-cov \
-        precommit build clean version docs docs-serve docs-deploy
+        precommit build clean version docs docs-serve docs-deploy \
+        gh-labels gh-sub gh-block gh-show
 
 .DEFAULT_GOAL := help
 
@@ -179,3 +180,24 @@ docs-serve: ## 🌐 Serve documentation locally
 
 docs-deploy: ## 🚀 Deploy documentation to GitHub Pages
 	uv run --group docs mkdocs gh-deploy --force
+
+# ===========================================================================
+##@ GitHub
+# ===========================================================================
+
+gh-labels: ## 🏷️  Bootstrap the GitHub label taxonomy (type / area / layer / wave / priority)
+	bash .github/scripts/create-labels.sh
+
+gh-sub: ## 🔗 Link CHILDREN as sub-issues of PARENT (e.g. make gh-sub PARENT=7 CHILDREN="42 43 44")
+	@test -n "$(PARENT)"   || { echo "error: PARENT=<issue-number> required"   >&2; exit 1; }
+	@test -n "$(CHILDREN)" || { echo "error: CHILDREN=\"<a> <b> ...\" required" >&2; exit 1; }
+	bash .github/scripts/link-issues.sh sub $(PARENT) $(CHILDREN)
+
+gh-block: ## 🚧 Mark ISSUE as blocked by BLOCKED_BY (e.g. make gh-block ISSUE=44 BLOCKED_BY=43)
+	@test -n "$(ISSUE)"      || { echo "error: ISSUE=<issue-number> required"      >&2; exit 1; }
+	@test -n "$(BLOCKED_BY)" || { echo "error: BLOCKED_BY=<issue-number> required" >&2; exit 1; }
+	bash .github/scripts/link-issues.sh block $(ISSUE) $(BLOCKED_BY)
+
+gh-show: ## 🔍 Show parent / sub-issues / blocking / blocked-by for ISSUE
+	@test -n "$(ISSUE)" || { echo "error: ISSUE=<issue-number> required" >&2; exit 1; }
+	bash .github/scripts/link-issues.sh show $(ISSUE)
