@@ -11,6 +11,9 @@ from gauss_flows._src.transforms.bijections.linear.conv_exp import (
 )
 from gauss_flows._src.transforms.bijections.linear.haar import HaarWavelet
 from gauss_flows._src.transforms.bijections.linear.lu import LULinearPermute
+from gauss_flows._src.transforms.bijections.linear.orthogonal_conv1x1 import (
+    Orthogonal1x1Conv,
+)
 from gauss_flows._src.transforms.bijections.linear.rotation import (
     FixedRotation,
     HouseholderRotation,
@@ -24,6 +27,7 @@ __all__ = [
     "HouseholderRotation",
     "Invertible1x1Conv",
     "LULinearPermute",
+    "Orthogonal1x1Conv",
     "OrthogonalConvExponential",
     "OrthogonalRotation",
 ]
