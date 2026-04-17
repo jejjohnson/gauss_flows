@@ -74,8 +74,9 @@ class VAE(AbstractStochastic):
     Example:
         Compose with a standard Normal prior to form a one-level VAE flow::
 
-            from gauss_flows import SurVAEFlow, VAE
+            import jax.numpy as jnp
             from flowjax.distributions import Normal
+            from gauss_flows import SurVAEFlow, VAE
 
             encoder = MyConditionalGaussian(...)   # q(z|x), reparameterized
             decoder = MyConditionalGaussian(...)   # p(x|z)

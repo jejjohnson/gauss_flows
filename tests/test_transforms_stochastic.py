@@ -81,15 +81,17 @@ def test_vae_forward_returns_encoder_sample_and_elbo_term(key):
 
 def test_vae_forward_elbo_matches_closed_form_gaussian_kl(key):
     """Monte-Carlo ``E[log p(x|z) - log q(z|x)]`` must match the closed-form
-    ``log p(x|μ_q) - 0.5·tr(Σ_q/σ_p²) - H(q)`` for Gaussian q/p.
+    ``log p(x|Wμ_q+b, Σ_p) - 0.5·tr(W Σ_q Wᵀ Σ_p⁻¹) + H(q)`` for Gaussian q/p.
 
     Concretely, with ``q(z|x) = N(μ_q, diag(s_q²))``,
     ``p(x|z) = N(Wz+b, diag(s_p²))``, the expectation decomposes as::
 
-        E[log p(x|z)]  = log N(x; Wμ_q+b, diag(s_p²)) − 0.5·tr(W diag(s_q²) Wᵀ / s_p²)
-        E[log q(z|x)] = -H(q) = -0.5·Σ(log(2πe s_q²))
+        E[log p(x|z)]   = log N(x; Wμ_q+b, diag(s_p²)) − 0.5·tr(W diag(s_q²) Wᵀ / s_p²)
+        E[log q(z|x)]  = -H(q) = -0.5·Σ log(2πe s_q²)
 
-    With enough samples the MC estimate lands within 3σ of this value,
+        E[log p(x|z) - log q(z|x)] = E[log p(x|z)] + H(q)
+
+    With enough samples the MC estimate lands within 3-sigma of this value,
     verifying both the sampling and the log-prob paths are wired correctly.
     """
     enc_key, dec_key, sample_key = jr.split(key, 3)
