@@ -330,6 +330,7 @@ class OrthogonalConvExponential(AbstractBijection):
     shape: tuple[int, ...]
     cond_shape: ClassVar[None] = None
     weight: Array  # (k_h, k_w, C, C) free parameter; skew kernel derived per-call
+    spectral_seed: Array  # (H, W, C) persistent unit-norm seed for power iteration
     n_terms: int
     n_power_iterations: int
 
@@ -361,10 +362,23 @@ class OrthogonalConvExponential(AbstractBijection):
         c = int(shape[-1])
         self.n_terms = int(n_terms)
         self.n_power_iterations = int(n_power_iterations)
-        # Small init: the skew kernel K = W - flip(W)^T doubles scale, and
-        # spectral norm caps ||K|| <= 1, so near-identity behavior at step 0.
-        # weight: (k_h, k_w, C, C)
-        self.weight = jr.normal(key, (kernel_size, kernel_size, c, c)) * 0.05
+        # Split the user's key: weight init and the persistent spectral seed
+        # must be independent so a pathologically-aligned weight/seed pair is
+        # measure-zero rather than correlated by construction.
+        w_key, s_key = jr.split(key)
+        # Small weight init: the skew kernel K = W - flip(W)^T doubles scale,
+        # and spectral norm caps ||K|| <= 1, so near-identity behavior at
+        # step 0. weight: (k_h, k_w, C, C).
+        self.weight = jr.normal(w_key, (kernel_size, kernel_size, c, c)) * 0.05
+        # Persistent random (H, W, C) seed for power iteration. A random
+        # vector has non-zero projection on every fixed singular direction
+        # with probability 1; a deterministic seed (constant, sin(arange),
+        # ...) can collide with ker(M_K) for specific kernel configurations
+        # (e.g. shape=(1,1,3) + kernel_size=1 yields a 3x3 skew matrix
+        # whose 1-D nullspace could align with a fixed pattern). Grads are
+        # blocked in _spectral_normalize so this field stays constant.
+        raw_seed = jr.normal(s_key, self.shape)
+        self.spectral_seed = raw_seed / (jnp.linalg.norm(raw_seed) + 1e-8)
 
     @staticmethod
     def _skew(weight: Array) -> Array:
@@ -447,31 +461,28 @@ class OrthogonalConvExponential(AbstractBijection):
         take :math:`\max(\sigma, 1)`), not high accuracy.
 
         **Seed choice.** The seed must have non-zero projection on the
-        leading singular vector of :math:`M_K`. A constant (DC) vector
-        fails for skew-symmetric kernels with :math:`C = 1`: such kernels
-        have :math:`\operatorname{tr}(K_{\text{center}}) = 0` *and*
-        spatial antisymmetry, so :math:`M_K \mathbf{1} = 0`. Starting
-        from :math:`\mathbf{1}` collapses the iteration to :math:`0`,
-        :math:`\sigma` is reported as :math:`\approx 0`, no clipping
-        triggers, and the Taylor series silently diverges for
-        :math:`\|M_K\| > 1`. We use a deterministic non-DC pattern
-        (:math:`\sin(\text{arange})`) instead — always has non-trivial
-        projection on any non-zero operator's leading singular vector.
+        leading singular vector of :math:`M_K`. Any *deterministic* seed
+        (constant, :math:`\sin(\text{arange})`, ...) can collide with
+        :math:`\ker(M_K)` for specific kernel configurations — e.g. a
+        constant vector is in :math:`\ker(M_K)` for skew-symmetric kernels
+        with :math:`C = 1`, and any fixed pattern in :math:`\mathbb{R}^3`
+        can land in the 1-D nullspace of a ``shape=(1,1,3)`` +
+        ``kernel_size=1`` skew kernel. We therefore use a **persistent
+        random** seed stored at construction time
+        (:attr:`spectral_seed`). A random Gaussian has non-zero projection
+        on every fixed direction with probability 1, so alignment with
+        :math:`\ker(M_K)` over the kernel trajectory during training is
+        measure-zero.
 
         Shape:
             ``kernel`` : ``(k_h, k_w, C, C)``
             ``u``, ``v`` (power-iteration vectors): ``(H, W, C)``
             returns    : ``(k_h, k_w, C, C)``  (rescaled, grad-flowing)
         """
-        h, w, c = self.shape
-        # Non-DC seed — constant vectors sit in ker(M_K) for skew kernels
-        # with C=1 (and more generally lose to symmetric loss of the DC
-        # mode), so power iteration collapses to 0. sin(arange) is
-        # deterministic, has broad spectral content, and avoids the
-        # degeneracy. u0: (H, W, C)
-        flat = jnp.arange(h * w * c, dtype=kernel.dtype)
-        u0 = jnp.sin(flat).reshape(h, w, c)
-        u0 = u0 / (jnp.linalg.norm(u0) + 1e-8)
+        # Persistent random seed: measure-zero probability of alignment
+        # with ker(M_K). stop_gradient blocks gradient flow into the seed
+        # field (it stays constant across training steps).
+        u0 = lax.stop_gradient(self.spectral_seed)
 
         # Block gradients through the power iteration: we only want grads
         # through the *rescale* `kernel / sigma`, not through the estimate.

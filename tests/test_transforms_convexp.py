@@ -109,6 +109,25 @@ def test_convexp_roundtrip_with_c1_large_weight(key):
     assert jnp.isclose(jnp.linalg.norm(x), jnp.linalg.norm(y), rtol=1e-3)
 
 
+def test_convexp_roundtrip_minimal_shape_skew_nullspace(key):
+    # Regression: for shape=(1,1,3) + kernel_size=1, the skew kernel is a 3x3
+    # skew matrix with a 1-D nullspace. A deterministic power-iteration seed
+    # (including sin(arange)) can land in this nullspace for specific weights
+    # and cause sigma=0 / no clipping. The persistent random seed is measure-
+    # zero aligned with any fixed 1-D subspace, so clipping must still fire.
+    shape = (1, 1, 3)
+    transform = OrthogonalConvExponential(
+        key, shape=shape, kernel_size=1, n_terms=12, n_power_iterations=8
+    )
+    # Heavily scale to force ||M_K|| >> 1 pre-clip.
+    scaled = eqx.tree_at(lambda m: m.weight, transform, transform.weight * 100.0)
+    x = jr.normal(key, shape)
+    y, _ = scaled.transform_and_log_det(x)
+    x_rec, _ = scaled.inverse_and_log_det(y)
+    assert jnp.allclose(x, x_rec, atol=1e-4)
+    assert jnp.isclose(jnp.linalg.norm(x), jnp.linalg.norm(y), rtol=1e-4)
+
+
 def test_convexp_spectral_norm_blocks_gradient_through_sigma(key):
     # The spectral-norm estimate must not introduce a gradient on the power
     # iteration; grads w.r.t. weight flow only through kernel / stop_grad(sigma).
