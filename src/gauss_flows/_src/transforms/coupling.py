@@ -101,9 +101,14 @@ class BatchNorm(AbstractBijection):
     Example:
         Training step pattern (per batch)::
 
+            @eqx.filter_value_and_grad
+            def loss_fn(layer, x):
+                _, log_dets = jax.vmap(layer.transform_and_log_det)(x)
+                return -jnp.mean(log_dets)
+
             bn = bn.with_batch_stats_from_data(batch)           # set source
-            y, log_det = jax.vmap(bn.transform_and_log_det)(batch)
-            # ... loss.backward, optimiser step ...
+            loss, grads = loss_fn(bn, batch)
+            bn = eqx.apply_updates(bn, jax.tree.map(lambda g: -1e-3 * g, grads))
             bn = bn.update_running_stats_from_batch(batch)      # update EMA
 
         Evaluation::
@@ -207,21 +212,32 @@ class BatchNorm(AbstractBijection):
 
     def with_batch_stats_from_data(self, batch: ArrayLike) -> BatchNorm:
         """Return a copy using batch statistics computed from ``batch``
-        (shape ``(N, *self.shape)``). Enables the ``use_batch_stats`` code path."""
+        (shape ``(N, *self.shape)``). Enables the ``use_batch_stats`` code path
+        and atomically clears ``use_running_average`` so the two stats sources
+        are mutually exclusive."""
 
         batch_arr = jnp.asarray(batch)
         batch_mean = jnp.mean(batch_arr, axis=0)
         batch_var = jnp.var(batch_arr, axis=0)
         return eqx.tree_at(
-            lambda m: (m.batch_stats, m.use_batch_stats),
+            lambda m: (m.batch_stats, m.use_batch_stats, m.use_running_average),
             self,
-            ((batch_mean, batch_var), True),
+            ((batch_mean, batch_var), True, False),
         )
 
     def with_running_average(self, use_running_average: bool = True) -> BatchNorm:
-        """Return a copy toggling the use of running statistics."""
+        """Return a copy toggling the use of running statistics.
 
-        return eqx.tree_at(lambda m: m.use_running_average, self, use_running_average)
+        When enabling running-average mode, ``use_batch_stats`` is atomically
+        cleared so the two stats sources are mutually exclusive."""
+
+        if use_running_average:
+            return eqx.tree_at(
+                lambda m: (m.use_running_average, m.use_batch_stats),
+                self,
+                (True, False),
+            )
+        return eqx.tree_at(lambda m: m.use_running_average, self, False)
 
 
 class AffineCoupling(AbstractBijection):

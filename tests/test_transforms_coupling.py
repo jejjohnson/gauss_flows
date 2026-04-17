@@ -212,6 +212,23 @@ def test_batch_norm_deep_stack_with_act_norm(key):
     assert jnp.allclose(log_det + log_det_inv, 0.0, atol=1e-5)
 
 
+def test_batch_norm_stats_sources_are_mutually_exclusive(key):
+    """Toggling one stats source atomically clears the other."""
+    shape = (3,)
+    batch = jr.normal(key, (8, *shape))
+    bn = BatchNorm(shape).update_running_stats_from_batch(batch)
+
+    # Start in eval mode, then switch to batch-stats mode.
+    bn_eval = bn.with_running_average(True)
+    assert bn_eval.use_running_average and not bn_eval.use_batch_stats
+    bn_train = bn_eval.with_batch_stats_from_data(batch)
+    assert bn_train.use_batch_stats and not bn_train.use_running_average
+
+    # And back the other direction.
+    bn_eval2 = bn_train.with_running_average(True)
+    assert bn_eval2.use_running_average and not bn_eval2.use_batch_stats
+
+
 def test_batch_norm_pytree_structure_is_stable():
     """with_batch_stats_from_data must not change the pytree structure."""
     shape = (3,)
