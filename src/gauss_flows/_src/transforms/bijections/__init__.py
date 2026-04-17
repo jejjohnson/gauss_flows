@@ -33,6 +33,7 @@ from gauss_flows._src.transforms.bijections.linear import (
     HouseholderRotation,
     Invertible1x1Conv,
     LULinearPermute,
+    Orthogonal1x1Conv,
     OrthogonalConvExponential,
     OrthogonalRotation,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "LULinearPermute",
     "MixtureGaussianCDF",
     "MixtureLogisticCDF",
+    "Orthogonal1x1Conv",
     "OrthogonalConvExponential",
     "OrthogonalRotation",
     "PeriodicShift",
