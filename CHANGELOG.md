@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4](https://github.com/jejjohnson/gauss_flows/compare/v0.1.3...v0.1.4) (2026-04-20)
+
+
+### Features
+
+* add Orthogonal1x1Conv transform ([#63](https://github.com/jejjohnson/gauss_flows/issues/63)) ([a85d791](https://github.com/jejjohnson/gauss_flows/commit/a85d79129aad56b61cb7d00dd101ac25f2cc0954))
+* add Orthogonal1x1Conv transform ([#63](https://github.com/jejjohnson/gauss_flows/issues/63)) ([a85d791](https://github.com/jejjohnson/gauss_flows/commit/a85d79129aad56b61cb7d00dd101ac25f2cc0954))
+* batch norm bijection (single-event, fail-loud) — supersedes [#47](https://github.com/jejjohnson/gauss_flows/issues/47) ([#58](https://github.com/jejjohnson/gauss_flows/issues/58)) ([21b9f37](https://github.com/jejjohnson/gauss_flows/commit/21b9f378f5477c501380f4753b681931561e8909))
+* orthogonal conv exponential via skew-symmetric kernel (supersedes [#56](https://github.com/jejjohnson/gauss_flows/issues/56)) ([#59](https://github.com/jejjohnson/gauss_flows/issues/59)) ([6a476f7](https://github.com/jejjohnson/gauss_flows/commit/6a476f7dbf96d474e48a798823d9cd9b346b5ca4))
+* **pr-43:** simple surjections — Abs, Sort, MaxPool2d, StochasticPermutation ([#43](https://github.com/jejjohnson/gauss_flows/issues/43)) ([074014d](https://github.com/jejjohnson/gauss_flows/commit/074014d9d69ebbfbcba0d74748b9ae15e0a97cce))
+* **pr-44:** slice + augment surjections — encoder/decoder-driven dim changers ([#44](https://github.com/jejjohnson/gauss_flows/issues/44)) ([213e8a0](https://github.com/jejjohnson/gauss_flows/commit/213e8a084ed94b22b2c36a708a3108f1c2d05f7d))
+* **pr-45:** finish DeepSigmoidCoupling + HistogramCDF stubs ([#45](https://github.com/jejjohnson/gauss_flows/issues/45)) ([a0201d0](https://github.com/jejjohnson/gauss_flows/commit/a0201d0b2ef009297009143b3d7d27195e758191))
+* true circular RQ spline + Fourier-feature coupling (supersedes [#46](https://github.com/jejjohnson/gauss_flows/issues/46)) ([#50](https://github.com/jejjohnson/gauss_flows/issues/50)) ([9e82155](https://github.com/jejjohnson/gauss_flows/commit/9e8215581428b206f4170b8f267ccc4f83f47c57))
+* vae stochastic transform (supersedes [#57](https://github.com/jejjohnson/gauss_flows/issues/57)) ([#60](https://github.com/jejjohnson/gauss_flows/issues/60)) ([2d8ee21](https://github.com/jejjohnson/gauss_flows/commit/2d8ee2105ae512e872949b0a64f4a750f69312f0))
+
 ## [0.1.3](https://github.com/jejjohnson/gauss_flows/compare/v0.1.2...v0.1.3) (2026-04-14)
 
 
