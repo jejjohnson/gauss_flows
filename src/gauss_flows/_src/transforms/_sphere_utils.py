@@ -77,6 +77,12 @@ def logmap_sphere(
 ) -> Array:
     """Return the tangent vector at ``x`` whose exp-map reaches ``y``.
 
+    The log map is not uniquely defined when ``y`` is antipodal to ``x``; this
+    implementation returns ``π · e`` for a deterministic tangent direction
+    ``e`` obtained from :func:`tangent_basis`, which at least satisfies
+    ``||logmap|| == π`` (the geodesic distance to the antipode) and is
+    continuous under perturbations of ``x``.
+
     Shape:
         ``x`` and ``y`` are single points on the sphere with shape ``(d+1,)``.
         Returns a tangent vector in ``T_x S^d`` with shape ``(d+1,)``.
@@ -101,13 +107,23 @@ def logmap_sphere(
     # ``arctan2`` form avoids the ``arccos`` boundary singularity at
     # ``cosine == ±1`` (whose derivative is ``-∞``) which would otherwise leak
     # NaN via ``0 · ∞`` in the inactive branch of the ``where``.
-    eps_sq = jnp.asarray(jnp.finfo(tangent.dtype).eps ** 2, dtype=tangent.dtype)
+    eps = jnp.finfo(tangent.dtype).eps
+    eps_sq = jnp.asarray(eps**2, dtype=tangent.dtype)
     is_nonzero = tangent_sq > eps_sq
     safe_tangent_sq = jnp.where(is_nonzero, tangent_sq, 1.0)
     safe_norm = jnp.sqrt(safe_tangent_sq)
     angle = jnp.arctan2(safe_norm, cosine)
     scale = jnp.where(is_nonzero, angle / safe_norm, 1.0)
-    return scale * tangent
+    generic = scale * tangent
+
+    # Antipodal branch: ``tangent == 0`` for both ``y == x`` and ``y == -x``;
+    # the sign of ``cosine`` distinguishes them. Return ``π · e`` along a
+    # deterministic tangent direction so the output is a valid tangent vector
+    # of the correct norm (= geodesic distance).
+    antipodal_tol = jnp.sqrt(jnp.asarray(eps, dtype=cosine.dtype))
+    is_antipodal = cosine < -1.0 + antipodal_tol
+    antipodal_direction = jnp.pi * tangent_basis(x_unit)[:, 0]
+    return jnp.where(is_antipodal, antipodal_direction, generic)
 
 
 __all__ = ["expmap_sphere", "logmap_sphere", "tangent_basis"]

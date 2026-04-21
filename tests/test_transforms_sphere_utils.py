@@ -31,14 +31,37 @@ def test_expmap_and_logmap_roundtrip(key):
 
 
 def test_expmap_and_logmap_roundtrip_large_angle(key):
-    """Roundtrip must survive angles well away from the sinc-small regime."""
+    """Roundtrip must survive angles well away from the sinc-small regime.
+
+    The spherical log map is only injective for ``||v|| < π``, so we clamp
+    the sampled tangent vectors below that injectivity radius before testing
+    the roundtrip identity.
+    """
     xs = UniformOnSphere(2).sample(key, (16,))
     basis = jax.vmap(tangent_basis)(xs)
     coeffs = jr.normal(jr.fold_in(key, 1), (16, 2)) * 1.5
     vs = jnp.einsum("bij,bj->bi", basis, coeffs)
+    norms = jnp.linalg.norm(vs, axis=-1, keepdims=True)
+    max_radius = jnp.pi * 0.95
+    vs = vs * jnp.minimum(1.0, max_radius / jnp.maximum(norms, 1e-12))
     ys = jax.vmap(expmap_sphere)(xs, vs)
     vs_back = jax.vmap(logmap_sphere)(xs, ys)
     assert jnp.allclose(vs_back, vs, atol=1e-4)
+
+
+def test_logmap_at_antipodal_point_returns_pi_length_tangent(key):
+    """Log map at ``y == -x`` returns a π-length vector in a tangent direction.
+
+    The log map is set-valued at antipodes; we pin down the deterministic
+    fallback to ``π · tangent_basis(x)[:, 0]`` which is (a) a valid tangent
+    vector at ``x``, and (b) has the correct geodesic length.
+    """
+    x = UniformOnSphere(2).sample(key)
+    y = -x
+    v = logmap_sphere(x, y)
+    assert jnp.allclose(jnp.linalg.norm(v), jnp.pi, atol=1e-5)
+    # Must be orthogonal to x (tangent condition).
+    assert jnp.allclose(jnp.dot(x, v), 0.0, atol=1e-5)
 
 
 def test_logmap_grad_at_coincident_point_is_finite(key):

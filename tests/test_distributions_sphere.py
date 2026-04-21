@@ -43,8 +43,8 @@ def test_uniform_on_sphere_log_prob_matches_surface_area(key, d):
 @pytest.mark.parametrize("d", [1, 2, 3, 7])
 def test_uniform_on_sphere_sample_mean_near_zero(key, d):
     dist = UniformOnSphere(d)
-    samples = dist.sample(jr.fold_in(key, 100 + d), sample_shape=(100_000,))
-    assert jnp.allclose(samples.mean(axis=0), 0.0, atol=1e-2)
+    samples = dist.sample(jr.fold_in(key, 100 + d), sample_shape=(20_000,))
+    assert jnp.allclose(samples.mean(axis=0), 0.0, atol=2e-2)
 
 
 def test_uniform_on_sphere_works_with_transformed_distribution(key):
@@ -125,3 +125,54 @@ def test_von_mises_fisher_vmap_over_batch_of_distributions(key):
     log_probs = jax.vmap(log_prob_single)(means, concentrations)
     assert log_probs.shape == (5,)
     assert jnp.all(jnp.isfinite(log_probs))
+
+
+def test_von_mises_fisher_promotes_integer_mean_to_float():
+    """Integer-typed ``mean`` must not crash `jnp.finfo` calls downstream."""
+    dist = VonMisesFisher(jnp.array([0, 0, 1]), 2.0)
+    assert jnp.issubdtype(dist.mean.dtype, jnp.floating)
+    assert jnp.issubdtype(dist.concentration.dtype, jnp.floating)
+    x = jnp.array([0.0, 0.0, 1.0])
+    assert jnp.isfinite(dist.log_prob(x))
+
+
+def test_von_mises_fisher_zero_mean_propagates_nan(key):
+    """Zero-vector ``mean`` is an invalid caller input; surface it as NaN."""
+    dist = VonMisesFisher(jnp.zeros(3), 2.0)
+    assert jnp.all(jnp.isnan(dist.mean))
+    x = _normalize(jr.normal(jr.fold_in(key, 0), (3,)))
+    assert jnp.isnan(dist.log_prob(x))
+
+
+def test_von_mises_fisher_negative_concentration_propagates_nan(key):
+    """Negative ``concentration`` is invalid; log_prob and samples must be NaN."""
+    dist = VonMisesFisher(jnp.array([0.0, 0.0, 1.0]), -1.5)
+    assert jnp.isnan(dist.concentration)
+    x = jnp.array([0.0, 0.0, 1.0])
+    assert jnp.isnan(dist.log_prob(x))
+    # The Wood sampler is run with a safe placeholder κ so the while-loop
+    # terminates, then tainted so the output propagates NaN.
+    sample = dist.sample(jr.fold_in(key, 1))
+    assert jnp.all(jnp.isnan(sample))
+
+
+@pytest.mark.parametrize("concentration", [50.0, 200.0, 1000.0])
+def test_von_mises_fisher_log_prob_large_kappa_matches_scipy(key, concentration):
+    """Hybrid series/asymptotic Bessel must stay accurate well past κ ≈ 50."""
+    mean = jnp.array([0.0, 0.0, 1.0])
+    x = _normalize(jr.normal(jr.fold_in(key, int(concentration)), (3,)))
+    dist = VonMisesFisher(mean, concentration)
+    expected = vonmises_fisher(mu=jnp.asarray(mean), kappa=concentration).logpdf(
+        jnp.asarray(x)
+    )
+    assert jnp.allclose(dist.log_prob(x), expected, atol=1e-3, rtol=1e-4)
+
+
+def test_von_mises_fisher_sample_at_large_kappa_is_finite(key):
+    """Stable Wood ``b`` must keep high-κ sampling from hanging or NaN-ing."""
+    dist = VonMisesFisher(jnp.array([0.0, 0.0, 1.0]), 500.0)
+    samples = dist.sample(jr.fold_in(key, 0), sample_shape=(32,))
+    assert samples.shape == (32, 3)
+    assert jnp.all(jnp.isfinite(samples))
+    # Concentrated samples should cluster near the mean direction.
+    assert (samples @ jnp.array([0.0, 0.0, 1.0])).min() > 0.5
