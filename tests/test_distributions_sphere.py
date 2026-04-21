@@ -144,6 +144,20 @@ def test_von_mises_fisher_zero_mean_propagates_nan(key):
     assert jnp.isnan(dist.log_prob(x))
 
 
+def test_von_mises_fisher_infinite_concentration_does_not_hang(key):
+    """``κ = +inf`` must not hang the Wood ``while_loop``.
+
+    Wood's constants go to ``(b=0, x0=1, c=NaN)`` at infinite concentration,
+    which makes the acceptance test ``NaN >= log(u)`` permanently false and
+    the rejection loop never terminates. A trainable concentration can
+    realistically overflow to ``+inf`` after a bad gradient step, so the
+    sanitization path has to catch non-finite κ, not just NaN.
+    """
+    dist = VonMisesFisher(jnp.array([0.0, 0.0, 1.0]), jnp.inf)
+    sample = dist.sample(jr.fold_in(key, 0))
+    assert jnp.all(jnp.isnan(sample))
+
+
 def test_von_mises_fisher_negative_concentration_propagates_nan(key):
     """Negative ``concentration`` is invalid; log_prob and samples must be NaN."""
     dist = VonMisesFisher(jnp.array([0.0, 0.0, 1.0]), -1.5)

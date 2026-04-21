@@ -224,11 +224,14 @@ class VonMisesFisher(AbstractDistribution):
         p = self.shape[0]
         m = p - 1.0
         concentration = self.concentration
-        # Wood's acceptance test hangs the while-loop for non-positive or NaN
-        # κ, so we run the sampler with a safe placeholder κ and taint the
-        # output afterwards to propagate any NaN/invalid input.
+        # Wood's acceptance test hangs the while-loop for any non-finite or
+        # non-positive κ (NaN, ±inf, 0, negatives), so we run the sampler
+        # with a safe placeholder κ and taint the output afterwards to
+        # propagate the invalid input. A learnable κ can overflow to +inf
+        # after a bad gradient step, so catching ``jnp.isfinite`` (not just
+        # ``~isnan``) is load-bearing.
         safe_concentration = jnp.where(
-            (concentration > 0) & ~jnp.isnan(concentration),
+            (concentration > 0) & jnp.isfinite(concentration),
             concentration,
             jnp.asarray(1.0, dtype=concentration.dtype),
         )
