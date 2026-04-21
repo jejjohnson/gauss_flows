@@ -13,7 +13,7 @@ def _validate_control_dim(control_dim: int) -> None:
 
 
 def _as_time_column(t: ArrayLike) -> Array:
-    t_array = jnp.asarray(t, dtype=float)
+    t_array = jnp.asarray(t)
     if t_array.ndim == 0:
         return jnp.reshape(t_array, (1,))
     if t_array.shape[-1] == 1:
@@ -49,7 +49,7 @@ def pack_time_control(
     if control is None:
         return t_array
 
-    control_array = jnp.atleast_1d(jnp.asarray(control, dtype=float))
+    control_array = jnp.atleast_1d(jnp.asarray(control))
     if t_array.shape[:-1] != control_array.shape[:-1]:
         raise ValueError(
             "t and control must share the same leading batch shape; "
@@ -81,7 +81,7 @@ def unpack_time_control(
         ((1,), (2,))
     """
     _validate_control_dim(control_dim)
-    condition = jnp.asarray(condition, dtype=float)
+    condition = jnp.asarray(condition)
     if condition.ndim == 0:
         raise ValueError("condition must have at least one dimension.")
 

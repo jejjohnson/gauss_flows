@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import equinox as eqx
 import jax.nn as jnn
 import jax.numpy as jnp
@@ -12,6 +14,9 @@ from jaxtyping import ArrayLike, PRNGKeyArray
 
 from gauss_flows._src.conditioning import time_control_cond_shape, unpack_time_control
 from gauss_flows._src.nn import TimeFourier
+
+
+_TimeGate = Callable[[ArrayLike], Array]
 
 
 class ContinuousAffineCoupling(AbstractBijection):
@@ -25,14 +30,25 @@ class ContinuousAffineCoupling(AbstractBijection):
     where ``g(0) = 0`` by construction, so the whole bijection is exactly the
     identity at ``t = 0``.
 
+    A single layer leaves the passive half ``x[:dim // 2]`` untouched. To
+    transform every dimension, stack multiple layers with alternating masks
+    (e.g. via ``flowjax.bijections.Chain`` combined with ``Flip`` / ``Permute``).
+
     Args:
-        key: PRNG key for the conditioner MLP and time gate.
+        key: PRNG key for the conditioner MLP and the default time gate.
         shape: Event shape ``(dim,)``.
         control_dim: Size of the optional control vector ``c``.
         n_hidden: Hidden width of the conditioner MLP.
         n_layers: Depth of the conditioner MLP.
+        time_net: Optional pre-built gate ``g`` with ``g(0) = 0``. Any
+            ``equinox.Module`` with a scalar-in / scalar-out ``__call__`` works
+            — see :class:`gauss_flows.TimeFourier`, :class:`gauss_flows.TimeTanh`,
+            :class:`gauss_flows.TimeIdentity`. When ``None``, a
+            :class:`gauss_flows.TimeFourier` gate is built with
+            ``embedding_dim=time_embedding_dim``.
         time_embedding_dim: Number of Fourier features used by the default
-            :class:`gauss_flows.TimeFourier` gate.
+            :class:`gauss_flows.TimeFourier` gate. Ignored when ``time_net`` is
+            provided.
 
     Shape:
         - Input ``x``: ``(dim,)``
@@ -59,7 +75,7 @@ class ContinuousAffineCoupling(AbstractBijection):
     untransformed_dim: int = eqx.field(static=True)
     mask: Array
     nn: eqx.nn.MLP
-    time_net: TimeFourier
+    time_net: _TimeGate
 
     def __init__(
         self,
@@ -69,6 +85,7 @@ class ContinuousAffineCoupling(AbstractBijection):
         control_dim: int = 0,
         n_hidden: int = 64,
         n_layers: int = 2,
+        time_net: _TimeGate | None = None,
         time_embedding_dim: int = 16,
     ):
         if len(shape) != 1:
@@ -86,8 +103,8 @@ class ContinuousAffineCoupling(AbstractBijection):
         self.untransformed_dim = dim // 2
         self.mask = jnp.concatenate(
             (
-                jnp.ones((self.untransformed_dim,), dtype=float),
-                jnp.zeros((transformed_dim,), dtype=float),
+                jnp.ones((self.untransformed_dim,)),
+                jnp.zeros((transformed_dim,)),
             )
         )
 
@@ -104,13 +121,14 @@ class ContinuousAffineCoupling(AbstractBijection):
         nn = eqx.tree_at(
             lambda model: (model.layers[-1].weight, model.layers[-1].bias),
             nn,
-            (
-                final_layer.weight * 0.01,
-                None if final_layer.bias is None else final_layer.bias * 0.01,
-            ),
+            (final_layer.weight * 0.01, final_layer.bias * 0.01),
         )
         self.nn = nn
-        self.time_net = TimeFourier(key_time, embedding_dim=time_embedding_dim)
+        self.time_net = (
+            TimeFourier(key_time, embedding_dim=time_embedding_dim)
+            if time_net is None
+            else time_net
+        )
 
     def _gated_params(
         self,
@@ -133,7 +151,6 @@ class ContinuousAffineCoupling(AbstractBijection):
         shift_active, log_scale_active = jnp.split(self.nn(nn_input), 2)
 
         zeros = jnp.zeros((self.untransformed_dim,), dtype=dtype)
-        # active params: (dim - untransformed_dim,) -> full event params: (dim,)
         shift = gate * jnp.concatenate((zeros, shift_active))
         log_scale = gate * jnp.concatenate((zeros, log_scale_active))
         return shift, log_scale
@@ -143,12 +160,11 @@ class ContinuousAffineCoupling(AbstractBijection):
         x: ArrayLike,
         condition: ArrayLike | None = None,
     ) -> tuple[Array, Array]:
-        x = jnp.asarray(x, dtype=float)
+        x = jnp.asarray(x)
         passive = x[: self.untransformed_dim]
         shift, log_scale = self._gated_params(passive, condition, dtype=x.dtype)
 
         active_mask = 1.0 - self.mask
-        # x: (dim,) -> y: (dim,), log_scale: (dim,) -> log_det: ()
         y = x * self.mask + active_mask * (x * jnp.exp(log_scale) + shift)
         log_det = jnp.sum(active_mask * log_scale)
         return y, log_det
@@ -158,12 +174,11 @@ class ContinuousAffineCoupling(AbstractBijection):
         y: ArrayLike,
         condition: ArrayLike | None = None,
     ) -> tuple[Array, Array]:
-        y = jnp.asarray(y, dtype=float)
+        y = jnp.asarray(y)
         passive = y[: self.untransformed_dim]
         shift, log_scale = self._gated_params(passive, condition, dtype=y.dtype)
 
         active_mask = 1.0 - self.mask
-        # y: (dim,) -> x: (dim,), log_scale: (dim,) -> log_det: ()
         x = y * self.mask + active_mask * ((y - shift) * jnp.exp(-log_scale))
         log_det = -jnp.sum(active_mask * log_scale)
         return x, log_det

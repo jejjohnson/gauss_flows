@@ -10,7 +10,7 @@ from jaxtyping import ArrayLike, PRNGKeyArray
 
 
 def _scalar_time(t: ArrayLike) -> Array:
-    t_array = jnp.asarray(t, dtype=float)
+    t_array = jnp.asarray(t)
     if t_array.shape == ():
         return t_array
     if t_array.shape == (1,):
@@ -58,7 +58,6 @@ class TimeFourier(eqx.Module):
 
     def __call__(self, t: ArrayLike) -> Array:
         t_scalar = _scalar_time(t)
-        # t: () -> phases: (embedding_dim,) -> gate: ()
         return jnp.dot(self.weights, jnp.sin(self.frequencies * t_scalar))
 
 
@@ -99,7 +98,6 @@ class TimeTanh(eqx.Module):
 
     def __call__(self, t: ArrayLike) -> Array:
         t_scalar = _scalar_time(t)
-        # t: () -> activations: (embedding_dim,) -> gate: ()
         return jnp.dot(self.weights, jnp.tanh(self.slopes * t_scalar))
 
 

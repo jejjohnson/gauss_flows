@@ -105,6 +105,38 @@ def test_continuous_affine_coupling_roundtrip_and_logdet(key, control_dim):
     assert jnp.allclose(log_det_f + log_det_i, 0.0, atol=1e-5)
 
 
+@pytest.mark.parametrize(
+    "make_time_net",
+    [
+        lambda key: TimeIdentity(),
+        lambda key: TimeTanh(key, embedding_dim=8),
+        lambda key: TimeFourier(key, embedding_dim=8),
+    ],
+)
+def test_continuous_affine_coupling_accepts_custom_time_net(key, make_time_net):
+    time_net = make_time_net(jr.fold_in(key, 7))
+    coupling = ContinuousAffineCoupling(
+        key,
+        shape=(4,),
+        control_dim=1,
+        n_hidden=16,
+        n_layers=1,
+        time_net=time_net,
+    )
+    assert coupling.time_net is time_net
+
+    x = jr.normal(jr.fold_in(key, 1), (4,))
+    condition_zero = pack_time_control(0.0, jnp.array([0.25]))
+    y0, log_det0 = coupling.transform_and_log_det(x, condition_zero)
+    assert jnp.allclose(y0, x, atol=1e-6)
+    assert jnp.allclose(log_det0, 0.0, atol=1e-6)
+
+    condition = pack_time_control(0.6, jnp.array([0.25]))
+    y, _ = coupling.transform_and_log_det(x, condition)
+    x_rec, _ = coupling.inverse_and_log_det(y, condition)
+    assert jnp.allclose(x, x_rec, atol=1e-5)
+
+
 def test_continuous_affine_coupling_is_identity_at_t_zero(key):
     coupling = ContinuousAffineCoupling(key, shape=(4,), control_dim=2)
     x = jr.normal(jr.fold_in(key, 1), (4,))
@@ -249,7 +281,9 @@ def test_continuous_affine_coupling_training_sanity(key):
 
     final_loss = loss_fn(flow)
     assert jnp.isfinite(final_loss)
-    assert final_loss < initial_loss
+    # Require a measurable margin so numerics drift can't silently flake the
+    # test, while still checking that training moved the loss meaningfully.
+    assert final_loss < initial_loss - 0.05
 
     x_probe = jr.normal(jr.fold_in(key, 4), (2,))
     y0, log_det0 = flow.bijection.transform_and_log_det(
