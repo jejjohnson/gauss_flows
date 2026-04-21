@@ -228,3 +228,39 @@ def test_von_mises_fisher_sample_at_large_kappa_is_finite(key):
     assert jnp.all(jnp.isfinite(samples))
     # Concentrated samples should cluster near the mean direction.
     assert (samples @ jnp.array([0.0, 0.0, 1.0])).min() > 0.5
+
+
+@pytest.mark.parametrize("kappa_val", [1e8, 1e12, 1e18])
+def test_von_mises_fisher_sample_does_not_hang_past_float_eps_regime(key, kappa_val):
+    """Finite κ large enough that ``b = m / (4κ)`` rounds below the float eps
+    used to make the current tests hang: ``x0`` snaps to ``1.0`` exactly,
+    ``c = -inf``, and the Wood acceptance test evaluates to NaN forever.
+    Clamping κ into the eps-safe range inside the sampler keeps the loop
+    terminating and yields a near-delta sample at the mean — the correct
+    asymptotic limit of VMF as κ → ∞.
+    """
+    mean = jnp.array([0.0, 0.0, 1.0], dtype=jnp.float32)
+    dist = VonMisesFisher(mean, jnp.asarray(kappa_val, dtype=jnp.float32))
+    sample = dist.sample(jr.fold_in(key, int(jnp.log(kappa_val))))
+    assert jnp.all(jnp.isfinite(sample))
+    assert sample @ mean > 0.99
+
+
+@pytest.mark.parametrize(
+    "d, concentration",
+    [(71, 2400.0), (121, 7000.0), (301, 8000.0)],
+)
+def test_von_mises_fisher_very_high_d_log_prob_matches_scipy(key, d, concentration):
+    """Very high-d VMFs at concentrations below the Hankel threshold must
+    size the Bessel series to cover ``k_peak ≈ ν²``. With the adaptive
+    series depth, d=301 at κ=8000 (reviewer's example) stays accurate
+    against scipy. A static ``K=1024`` cap would silently bias this by
+    thousands of log-units.
+    """
+    mean = jnp.zeros(d + 1).at[0].set(1.0)
+    x = _normalize(jr.normal(jr.fold_in(key, d), (d + 1,)))
+    dist = VonMisesFisher(mean, concentration)
+    expected = vonmises_fisher(mu=jnp.asarray(mean), kappa=concentration).logpdf(
+        jnp.asarray(x)
+    )
+    assert jnp.allclose(dist.log_prob(x), expected, atol=5e-2, rtol=5e-3)

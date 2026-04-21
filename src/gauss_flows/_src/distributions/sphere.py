@@ -18,16 +18,28 @@ from gauss_flows._src.transforms._sphere_utils import tangent_basis
 
 _LOG_2PI = jnp.log(2.0 * jnp.pi)
 # Truncated power-series expansion of log I_nu(x). Accurate while the series
-# peak (at k ≈ (sqrt(nu^2 + x^2) - nu) / 2) stays well below
-# _VMF_SERIES_TERMS. With 1024 terms the series covers x up to ~2000 for
-# nu up to ~30, which — combined with the Hankel asymptotic below — leaves
-# no gap for spheres up through d ~= 61.
-_VMF_SERIES_TERMS = 1024
+# peak (at k ≈ (sqrt(nu^2 + x^2) - nu) / 2) stays well below the truncation
+# depth. At the Hankel asymptotic crossover ``x = 2 nu^2 + 1`` the peak is
+# k_peak ≈ nu^2, so sizing the series as ``nu^2 + buffer`` leaves no gap
+# between the series and asymptotic regimes. Per-instance sizing is
+# clamped to [_VMF_SERIES_TERMS_MIN, _VMF_SERIES_TERMS_MAX] to keep the
+# default call fast while still covering high-d spheres.
+_VMF_SERIES_TERMS_MIN = 1024
+_VMF_SERIES_TERMS_MAX = 16384
 # Crossover between the power series and the asymptotic expansion. Both
 # approximations are accurate around this value for ``nu`` in the small-integer
 # half-integer range that arises for spheres up to ``d ~ 20``.
 _VMF_ASYMPTOTIC_THRESHOLD = 50.0
 _ON_SPHERE_ATOL = 1e-5
+
+
+def _vmf_series_terms(d: int) -> int:
+    """Return a series truncation depth that covers the peak at the Hankel
+    crossover for dimension ``d`` (so there is no bias region between the
+    two approximations)."""
+    nu_ceil = max(1, (d + 1) // 2)
+    target = nu_ceil * nu_ceil + 256
+    return min(_VMF_SERIES_TERMS_MAX, max(_VMF_SERIES_TERMS_MIN, target))
 
 
 def _normalize_to_sphere(x: Array) -> Array:
@@ -40,9 +52,9 @@ def _log_surface_area_sphere(d: int) -> Array:
     return jnp.log(2.0) + half * jnp.log(jnp.pi) - gammaln(half)
 
 
-def _log_bessel_iv_series(nu: Array, x: Array) -> Array:
+def _log_bessel_iv_series(n_terms: int, nu: Array, x: Array) -> Array:
     x_safe = jnp.maximum(x, jnp.finfo(x.dtype).tiny)
-    ks = jnp.arange(_VMF_SERIES_TERMS, dtype=x.dtype)
+    ks = jnp.arange(n_terms, dtype=x.dtype)
     log_terms = (
         ks * jnp.log((x_safe * x_safe) / 4.0)
         - gammaln(ks + 1.0)
@@ -63,7 +75,7 @@ def _log_bessel_iv_asymptotic(nu: Array, x: Array) -> Array:
     return x - 0.5 * jnp.log(2.0 * jnp.pi * x) + jnp.log(correction)
 
 
-def _log_bessel_iv(nu: Array, x: Array) -> Array:
+def _log_bessel_iv(n_terms: int, nu: Array, x: Array) -> Array:
     x = jnp.asarray(x)
     nu_arr = jnp.asarray(nu, dtype=x.dtype)
     # The Hankel asymptotic's k-th correction scales like nu^{2k} / x^k, so
@@ -71,7 +83,9 @@ def _log_bessel_iv(nu: Array, x: Array) -> Array:
     # (large nu) pick the asymptotic inside its divergence region -- where
     # 1 - (mu - 1)/(8x) + ... can turn negative and log(correction) becomes
     # NaN. We require both x > _VMF_ASYMPTOTIC_THRESHOLD and x > 2*nu^2 + 1
-    # so the first-order correction stays below ~1/2.
+    # so the first-order correction stays below ~1/2. For ``x`` below the
+    # threshold the series carries the full load; ``n_terms`` must be large
+    # enough that the peak at k ≈ nu^2 is captured (see _vmf_series_terms).
     threshold = jnp.maximum(
         jnp.asarray(_VMF_ASYMPTOTIC_THRESHOLD, dtype=x.dtype),
         2.0 * nu_arr * nu_arr + 1.0,
@@ -81,7 +95,7 @@ def _log_bessel_iv(nu: Array, x: Array) -> Array:
     # into the ``jnp.where`` gradient.
     x_series = jnp.where(use_asymptotic, threshold, x)
     x_asymptotic = jnp.where(use_asymptotic, x, threshold + 1.0)
-    series = _log_bessel_iv_series(nu, x_series)
+    series = _log_bessel_iv_series(n_terms, nu, x_series)
     asymptotic = _log_bessel_iv_asymptotic(nu, x_asymptotic)
     hybrid = jnp.where(use_asymptotic, asymptotic, series)
     return jnp.where(x > 0, hybrid, jnp.where(nu == 0.0, 0.0, -jnp.inf))
@@ -201,6 +215,10 @@ class VonMisesFisher(AbstractDistribution):
     def d(self) -> int:
         return self.shape[0] - 1
 
+    @property
+    def _bessel_n_terms(self) -> int:
+        return _vmf_series_terms(self.d)
+
     def _log_normalizer(self) -> Array:
         nu = 0.5 * (self.d - 1)
         concentration = self.concentration
@@ -212,7 +230,7 @@ class VonMisesFisher(AbstractDistribution):
         vmf_log_density = (
             nu * jnp.log(concentration_safe)
             - 0.5 * (self.d + 1) * _LOG_2PI
-            - _log_bessel_iv(nu, concentration_safe)
+            - _log_bessel_iv(self._bessel_n_terms, nu, concentration_safe)
         )
         # `κ > 0` is false for both κ == 0 and κ == NaN. Adding `0 · κ` below
         # taints the uniform branch with NaN when κ is NaN so invalid inputs
@@ -227,12 +245,19 @@ class VonMisesFisher(AbstractDistribution):
         # Wood's acceptance test hangs the while-loop for any non-finite or
         # non-positive κ (NaN, ±inf, 0, negatives), so we run the sampler
         # with a safe placeholder κ and taint the output afterwards to
-        # propagate the invalid input. A learnable κ can overflow to +inf
-        # after a bad gradient step, so catching ``jnp.isfinite`` (not just
-        # ``~isnan``) is load-bearing.
+        # propagate the invalid input. Beyond a dtype-dependent bound,
+        # ``b ≈ m / (4κ)`` rounds below the floating eps and ``x0`` snaps to
+        # ``1.0``; then ``c = κ + m log1p(-1) = -inf`` and the acceptance
+        # test ``κ w + m log1p(-x0 w) - c`` evaluates to NaN, so the loop
+        # never accepts. Clamp finite κ to the safe range; the sampler then
+        # returns ``w ≈ 1`` (i.e. ``sample ≈ mean``), which is the correct
+        # asymptotic limit as ``κ → ∞``.
+        eps = jnp.finfo(concentration.dtype).eps
+        kappa_safe_max = jnp.asarray(0.25 / eps, dtype=concentration.dtype)
+        is_finite_positive = (concentration > 0) & jnp.isfinite(concentration)
         safe_concentration = jnp.where(
-            (concentration > 0) & jnp.isfinite(concentration),
-            concentration,
+            is_finite_positive,
+            jnp.minimum(concentration, kappa_safe_max),
             jnp.asarray(1.0, dtype=concentration.dtype),
         )
         # Algebraically equivalent to
@@ -264,7 +289,11 @@ class VonMisesFisher(AbstractDistribution):
             body_fn,
             (key, jnp.asarray(0.0, dtype=concentration.dtype), jnp.asarray(False)),
         )
-        return w + 0.0 * concentration
+        # Non-finite/non-positive κ went through the placeholder branch;
+        # NaN the output so callers see the invalid input downstream. Finite
+        # κ above the safe clamp just gets its sampler-clamped value (a
+        # near-delta) and is considered valid.
+        return jnp.where(is_finite_positive, w, jnp.asarray(jnp.nan, dtype=w.dtype))
 
     def _sample(self, key: PRNGKeyArray, condition: Array | None = None) -> Array:
         del condition
