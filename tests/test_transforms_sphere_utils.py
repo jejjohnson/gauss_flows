@@ -49,6 +49,24 @@ def test_expmap_and_logmap_roundtrip_large_angle(key):
     assert jnp.allclose(vs_back, vs, atol=1e-4)
 
 
+def test_logmap_near_antipodal_uses_generic_shortest_geodesic(key):
+    """Near-antipodal (not exact) points must stay on the generic branch.
+
+    The antipodal fallback is only defined up to a free direction in
+    ``T_x S^d``, so triggering it for points that still have a well-defined
+    shortest-geodesic tangent would break ``expmap(x, logmap(x, y)) ≈ y``.
+    """
+    x = UniformOnSphere(2).sample(key)
+    basis = tangent_basis(x)
+    # Build a y at geodesic distance ~0.99 π from x (cosine ≈ -0.9995).
+    near_antipode_tangent = basis @ jnp.array([0.99 * jnp.pi, 0.0])
+    y = expmap_sphere(x, near_antipode_tangent)
+    v = logmap_sphere(x, y)
+    assert jnp.allclose(v, near_antipode_tangent, atol=1e-5)
+    y_back = expmap_sphere(x, v)
+    assert jnp.allclose(y_back, y, atol=1e-5)
+
+
 def test_logmap_at_antipodal_point_returns_pi_length_tangent(key):
     """Log map at ``y == -x`` returns a π-length vector in a tangent direction.
 

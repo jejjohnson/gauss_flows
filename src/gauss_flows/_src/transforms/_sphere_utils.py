@@ -107,8 +107,10 @@ def logmap_sphere(
     # ``arctan2`` form avoids the ``arccos`` boundary singularity at
     # ``cosine == ±1`` (whose derivative is ``-∞``) which would otherwise leak
     # NaN via ``0 · ∞`` in the inactive branch of the ``where``.
-    eps = jnp.finfo(tangent.dtype).eps
-    eps_sq = jnp.asarray(eps**2, dtype=tangent.dtype)
+    eps_sq = jnp.asarray(
+        jnp.finfo(tangent.dtype).eps ** 2,
+        dtype=tangent.dtype,
+    )
     is_nonzero = tangent_sq > eps_sq
     safe_tangent_sq = jnp.where(is_nonzero, tangent_sq, 1.0)
     safe_norm = jnp.sqrt(safe_tangent_sq)
@@ -116,12 +118,13 @@ def logmap_sphere(
     scale = jnp.where(is_nonzero, angle / safe_norm, 1.0)
     generic = scale * tangent
 
-    # Antipodal branch: ``tangent == 0`` for both ``y == x`` and ``y == -x``;
-    # the sign of ``cosine`` distinguishes them. Return ``π · e`` along a
-    # deterministic tangent direction so the output is a valid tangent vector
-    # of the correct norm (= geodesic distance).
-    antipodal_tol = jnp.sqrt(jnp.asarray(eps, dtype=cosine.dtype))
-    is_antipodal = cosine < -1.0 + antipodal_tol
+    # Antipodal fallback fires only at the true singularity ``y == -x``
+    # (tangent exactly zero with ``cosine < 0``). Near-antipodal points with
+    # ``cosine`` close to but not exactly ``-1`` still have a well-defined
+    # shortest-geodesic tangent that the generic branch computes correctly;
+    # triggering the fallback on those would snap them to an arbitrary
+    # π-length direction and break ``expmap(x, logmap(x, y)) ≈ y``.
+    is_antipodal = (~is_nonzero) & (cosine < 0.0)
     antipodal_direction = jnp.pi * tangent_basis(x_unit)[:, 0]
     return jnp.where(is_antipodal, antipodal_direction, generic)
 

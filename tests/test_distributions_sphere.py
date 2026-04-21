@@ -168,6 +168,23 @@ def test_von_mises_fisher_log_prob_large_kappa_matches_scipy(key, concentration)
     assert jnp.allclose(dist.log_prob(x), expected, atol=1e-3, rtol=1e-4)
 
 
+@pytest.mark.parametrize("d, concentration", [(21, 30.0), (51, 100.0), (101, 100.0)])
+def test_von_mises_fisher_high_d_log_prob_is_finite(key, d, concentration):
+    """High-ν VMFs must not trip the Hankel asymptotic inside its divergence
+    region: Bessel branch selection has to gate on both κ and ν, or log_prob
+    returns NaN for perfectly valid parameters.
+    """
+    mean = jnp.zeros(d + 1).at[0].set(1.0)
+    x = _normalize(jr.normal(jr.fold_in(key, d), (d + 1,)))
+    dist = VonMisesFisher(mean, concentration)
+    log_prob = dist.log_prob(x)
+    assert jnp.isfinite(log_prob)
+    expected = vonmises_fisher(mu=jnp.asarray(mean), kappa=concentration).logpdf(
+        jnp.asarray(x)
+    )
+    assert jnp.allclose(log_prob, expected, atol=1e-3, rtol=1e-4)
+
+
 def test_von_mises_fisher_sample_at_large_kappa_is_finite(key):
     """Stable Wood ``b`` must keep high-κ sampling from hanging or NaN-ing."""
     dist = VonMisesFisher(jnp.array([0.0, 0.0, 1.0]), 500.0)

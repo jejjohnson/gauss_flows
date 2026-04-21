@@ -63,13 +63,22 @@ def _log_bessel_iv_asymptotic(nu: Array, x: Array) -> Array:
 
 def _log_bessel_iv(nu: Array, x: Array) -> Array:
     x = jnp.asarray(x)
-    # Use a safe input on each branch so the inactive path can't emit NaN/-inf
-    # into the ``jnp.where`` gradient. Actual small-x/negative-x handling is
-    # done by the outer ``where`` on the real ``x``.
-    threshold = jnp.asarray(_VMF_ASYMPTOTIC_THRESHOLD, dtype=x.dtype)
+    nu_arr = jnp.asarray(nu, dtype=x.dtype)
+    # The Hankel asymptotic's k-th correction scales like nu^{2k} / x^k, so
+    # it only converges when x >> nu^2. Gating on x alone lets high-d VMFs
+    # (large nu) pick the asymptotic inside its divergence region -- where
+    # 1 - (mu - 1)/(8x) + ... can turn negative and log(correction) becomes
+    # NaN. We require both x > _VMF_ASYMPTOTIC_THRESHOLD and x > 2*nu^2 + 1
+    # so the first-order correction stays below ~1/2.
+    threshold = jnp.maximum(
+        jnp.asarray(_VMF_ASYMPTOTIC_THRESHOLD, dtype=x.dtype),
+        2.0 * nu_arr * nu_arr + 1.0,
+    )
     use_asymptotic = x > threshold
+    # Feed a safe input to each branch so the inactive path can't emit NaN/-inf
+    # into the ``jnp.where`` gradient.
     x_series = jnp.where(use_asymptotic, threshold, x)
-    x_asymptotic = jnp.where(use_asymptotic, x, threshold)
+    x_asymptotic = jnp.where(use_asymptotic, x, threshold + 1.0)
     series = _log_bessel_iv_series(nu, x_series)
     asymptotic = _log_bessel_iv_asymptotic(nu, x_asymptotic)
     hybrid = jnp.where(use_asymptotic, asymptotic, series)
