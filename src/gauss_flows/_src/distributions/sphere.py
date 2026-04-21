@@ -118,12 +118,12 @@ class VonMisesFisher(AbstractDistribution):
         if mean_array.shape[0] < 2:
             raise ValueError("mean must live in at least two ambient dimensions.")
         mean_norm = jnp.linalg.norm(mean_array)
-        if float(mean_norm) == 0.0:
+        if mean_norm.item() <= jnp.finfo(mean_array.dtype).tiny:
             raise ValueError("mean must be non-zero.")
         concentration_array = jnp.asarray(concentration, dtype=float)
         if concentration_array.shape != ():
             raise ValueError("concentration must be a scalar.")
-        if float(concentration_array) < 0.0:
+        if concentration_array.item() < 0.0:
             raise ValueError("concentration must be non-negative.")
         self.shape = mean_array.shape
         self.mean = mean_array / mean_norm

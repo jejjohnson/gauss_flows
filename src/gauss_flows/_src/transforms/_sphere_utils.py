@@ -34,7 +34,7 @@ def tangent_basis(x: Array) -> Array:
     e1 = jnp.eye(d_plus_1, dtype=x_unit.dtype)[:, 0]
     sign = jnp.where(x_unit[0] >= 0, 1.0, -1.0).astype(x_unit.dtype)
     v = x_unit + sign * e1
-    v_norm2 = jnp.dot(v, v)
+    v_norm2 = jnp.maximum(jnp.dot(v, v), jnp.finfo(x_unit.dtype).tiny)
     householder = (
         jnp.eye(d_plus_1, dtype=x_unit.dtype) - 2.0 * jnp.outer(v, v) / v_norm2
     )
