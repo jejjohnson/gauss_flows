@@ -6,9 +6,14 @@ half whose elementwise update is parameterised by an MLP that sees the
 condition half.
 """
 
+from __future__ import annotations
+
 from gauss_flows._src.transforms.bijections.coupling.affine import AffineCoupling
 from gauss_flows._src.transforms.bijections.coupling.circular_spline import (
     CircularRQSplineCoupling,
+)
+from gauss_flows._src.transforms.bijections.coupling.continuous_affine_coupling import (
+    ContinuousAffineCoupling,
 )
 from gauss_flows._src.transforms.bijections.coupling.deepsigmoid import (
     DeepSigmoidCoupling,
@@ -19,6 +24,7 @@ from gauss_flows._src.transforms.bijections.coupling.spline import RQSplineCoupl
 __all__ = [
     "AffineCoupling",
     "CircularRQSplineCoupling",
+    "ContinuousAffineCoupling",
     "DeepSigmoidCoupling",
     "RQSplineCoupling",
 ]
