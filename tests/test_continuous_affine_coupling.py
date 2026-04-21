@@ -137,6 +137,40 @@ def test_continuous_affine_coupling_accepts_custom_time_net(key, make_time_net):
     assert jnp.allclose(x, x_rec, atol=1e-5)
 
 
+def test_continuous_affine_coupling_passive_half_invariant_under_training(key):
+    """Passive dims must never be written by the layer, even after gradient
+    updates. Regression test for the case where the coupling mask was stored
+    as a trainable (floating) pytree leaf and Optax could drift it away from
+    ``{0, 1}``, silently breaking the bijection.
+    """
+    coupling = ContinuousAffineCoupling(
+        key,
+        shape=(4,),
+        control_dim=1,
+        n_hidden=16,
+        n_layers=1,
+        time_embedding_dim=8,
+    )
+    x = jr.normal(jr.fold_in(key, 1), (4,))
+    condition = pack_time_control(0.5, jnp.array([0.3]))
+
+    opt = optax.adam(1e-1)
+    opt_state = opt.init(eqx.filter(coupling, eqx.is_inexact_array))
+
+    def loss_fn(model):
+        y, log_det = model.transform_and_log_det(x, condition)
+        return jnp.sum(y**2) + log_det
+
+    for _ in range(5):
+        grads = eqx.filter_grad(loss_fn)(coupling)
+        updates, opt_state = opt.update(grads, opt_state)
+        coupling = eqx.apply_updates(coupling, updates)
+
+    y, _ = coupling.transform_and_log_det(x, condition)
+    passive_dim = coupling.untransformed_dim
+    assert jnp.array_equal(y[:passive_dim], x[:passive_dim])
+
+
 def test_continuous_affine_coupling_is_identity_at_t_zero(key):
     coupling = ContinuousAffineCoupling(key, shape=(4,), control_dim=2)
     x = jr.normal(jr.fold_in(key, 1), (4,))

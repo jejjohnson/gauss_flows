@@ -73,7 +73,6 @@ class ContinuousAffineCoupling(AbstractBijection):
     cond_shape: tuple[int, ...]
     control_dim: int = eqx.field(static=True)
     untransformed_dim: int = eqx.field(static=True)
-    mask: Array
     nn: eqx.nn.MLP
     time_net: _TimeGate
 
@@ -101,12 +100,6 @@ class ContinuousAffineCoupling(AbstractBijection):
         self.cond_shape = time_control_cond_shape(control_dim)
         self.control_dim = control_dim
         self.untransformed_dim = dim // 2
-        self.mask = jnp.concatenate(
-            (
-                jnp.ones((self.untransformed_dim,)),
-                jnp.zeros((transformed_dim,)),
-            )
-        )
 
         key_nn, key_time = jr.split(key)
         nn = eqx.nn.MLP(
@@ -130,7 +123,7 @@ class ContinuousAffineCoupling(AbstractBijection):
             else time_net
         )
 
-    def _gated_params(
+    def _gated_active_params(
         self,
         passive: Array,
         condition: ArrayLike | None,
@@ -149,11 +142,7 @@ class ContinuousAffineCoupling(AbstractBijection):
 
         nn_input = passive if control is None else jnp.concatenate((passive, control))
         shift_active, log_scale_active = jnp.split(self.nn(nn_input), 2)
-
-        zeros = jnp.zeros((self.untransformed_dim,), dtype=dtype)
-        shift = gate * jnp.concatenate((zeros, shift_active))
-        log_scale = gate * jnp.concatenate((zeros, log_scale_active))
-        return shift, log_scale
+        return gate * shift_active, gate * log_scale_active
 
     def transform_and_log_det(
         self,
@@ -162,11 +151,11 @@ class ContinuousAffineCoupling(AbstractBijection):
     ) -> tuple[Array, Array]:
         x = jnp.asarray(x)
         passive = x[: self.untransformed_dim]
-        shift, log_scale = self._gated_params(passive, condition, dtype=x.dtype)
-
-        active_mask = 1.0 - self.mask
-        y = x * self.mask + active_mask * (x * jnp.exp(log_scale) + shift)
-        log_det = jnp.sum(active_mask * log_scale)
+        active = x[self.untransformed_dim :]
+        shift, log_scale = self._gated_active_params(passive, condition, dtype=x.dtype)
+        active_y = active * jnp.exp(log_scale) + shift
+        y = jnp.concatenate((passive, active_y))
+        log_det = jnp.sum(log_scale)
         return y, log_det
 
     def inverse_and_log_det(
@@ -176,11 +165,11 @@ class ContinuousAffineCoupling(AbstractBijection):
     ) -> tuple[Array, Array]:
         y = jnp.asarray(y)
         passive = y[: self.untransformed_dim]
-        shift, log_scale = self._gated_params(passive, condition, dtype=y.dtype)
-
-        active_mask = 1.0 - self.mask
-        x = y * self.mask + active_mask * ((y - shift) * jnp.exp(-log_scale))
-        log_det = -jnp.sum(active_mask * log_scale)
+        active_y = y[self.untransformed_dim :]
+        shift, log_scale = self._gated_active_params(passive, condition, dtype=y.dtype)
+        active_x = (active_y - shift) * jnp.exp(-log_scale)
+        x = jnp.concatenate((passive, active_x))
+        log_det = -jnp.sum(log_scale)
         return x, log_det
 
 
