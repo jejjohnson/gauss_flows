@@ -6,6 +6,11 @@ import jax.numpy as jnp
 from jax import Array
 
 
+def _safe_normalize(x: Array) -> Array:
+    norm = jnp.maximum(jnp.linalg.norm(x), jnp.finfo(x.dtype).tiny)
+    return x / norm
+
+
 def tangent_basis(x: Array) -> Array:
     """Return an orthonormal basis of the tangent space ``T_x S^d``.
 
@@ -24,7 +29,7 @@ def tangent_basis(x: Array) -> Array:
         (3, 2)
     """
 
-    x_unit = x / jnp.linalg.norm(x)
+    x_unit = _safe_normalize(x)
     d_plus_1 = x_unit.shape[0]
     e1 = jnp.eye(d_plus_1, dtype=x_unit.dtype)[:, 0]
     sign = jnp.where(x_unit[0] >= 0, 1.0, -1.0).astype(x_unit.dtype)
@@ -58,12 +63,12 @@ def expmap_sphere(
         (3,)
     """
 
-    x_unit = x / jnp.linalg.norm(x)
+    x_unit = _safe_normalize(x)
     v_tangent = v - x_unit * jnp.dot(x_unit, v)
     radius = jnp.linalg.norm(v_tangent)
     scale = jnp.sinc(radius / jnp.pi)
     y = jnp.cos(radius) * x_unit + scale * v_tangent
-    return y / jnp.linalg.norm(y)
+    return _safe_normalize(y)
 
 
 def logmap_sphere(
@@ -86,8 +91,8 @@ def logmap_sphere(
         (3,)
     """
 
-    x_unit = x / jnp.linalg.norm(x)
-    y_unit = y / jnp.linalg.norm(y)
+    x_unit = _safe_normalize(x)
+    y_unit = _safe_normalize(y)
     cosine = jnp.clip(jnp.dot(x_unit, y_unit), -1.0, 1.0)
     tangent = y_unit - cosine * x_unit
     tangent_norm = jnp.linalg.norm(tangent)

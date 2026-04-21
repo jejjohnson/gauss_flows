@@ -188,7 +188,7 @@ class VonMisesFisher(AbstractDistribution):
             key_w, key_v = jr.split(sample_key)
             w = self._sample_w(key_w)
             v = _normalize_to_sphere(jr.normal(key_v, (self.d,)))
-            basis = tangent_basis(self.mean)
+            basis = tangent_basis(self.mean)  # basis: (d+1, d)
             tangent_part = basis @ v  # v: (d,) -> tangent_part: (d+1,)
             scale = jnp.sqrt(jnp.maximum(1.0 - w * w, 0.0))
             sample = w * self.mean + scale * tangent_part
