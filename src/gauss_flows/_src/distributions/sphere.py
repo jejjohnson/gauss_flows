@@ -17,10 +17,12 @@ from gauss_flows._src.transforms._sphere_utils import tangent_basis
 
 
 _LOG_2PI = jnp.log(2.0 * jnp.pi)
-# Truncated power-series expansion of log I_nu(x); accurate while the series
-# peak (near k ≈ x / 2) stays below _VMF_SERIES_TERMS. For larger x we fall
-# back to the Hankel-style large-argument asymptotic instead.
-_VMF_SERIES_TERMS = 256
+# Truncated power-series expansion of log I_nu(x). Accurate while the series
+# peak (at k ≈ (sqrt(nu^2 + x^2) - nu) / 2) stays well below
+# _VMF_SERIES_TERMS. With 1024 terms the series covers x up to ~2000 for
+# nu up to ~30, which — combined with the Hankel asymptotic below — leaves
+# no gap for spheres up through d ~= 61.
+_VMF_SERIES_TERMS = 1024
 # Crossover between the power series and the asymptotic expansion. Both
 # approximations are accurate around this value for ``nu`` in the small-integer
 # half-integer range that arises for spheres up to ``d ~ 20``.

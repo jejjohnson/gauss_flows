@@ -7,6 +7,11 @@ from jax import Array
 
 
 def _safe_normalize(x: Array) -> Array:
+    # Promote integer inputs to float so ``jnp.finfo(...).tiny`` works and
+    # so the returned unit vector is a proper floating array regardless of
+    # how the caller typed their input.
+    x = jnp.asarray(x)
+    x = x.astype(jnp.result_type(x.dtype, float))
     norm = jnp.maximum(jnp.linalg.norm(x), jnp.finfo(x.dtype).tiny)
     return x / norm
 

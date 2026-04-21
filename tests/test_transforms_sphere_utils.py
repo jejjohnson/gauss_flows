@@ -9,6 +9,30 @@ import jax.random as jr
 from gauss_flows import UniformOnSphere, expmap_sphere, logmap_sphere, tangent_basis
 
 
+def test_sphere_utilities_accept_integer_inputs():
+    """Public sphere utilities must promote int-typed inputs to float.
+
+    ``_safe_normalize`` called ``jnp.finfo`` on the input dtype, which crashes
+    for integer arrays; that made ``tangent_basis(jnp.array([0, 0, 1]))``
+    (a perfectly reasonable user call) raise a cryptic dtype error instead
+    of returning geometry.
+    """
+    x_int = jnp.array([0, 0, 1])
+    y_int = jnp.array([1, 0, 0])
+
+    basis = tangent_basis(x_int)
+    assert basis.shape == (3, 2)
+    assert jnp.issubdtype(basis.dtype, jnp.floating)
+
+    y_mapped = expmap_sphere(x_int, jnp.array([0.1, 0.0, 0.0]))
+    assert y_mapped.shape == (3,)
+    assert jnp.issubdtype(y_mapped.dtype, jnp.floating)
+
+    v = logmap_sphere(x_int, y_int)
+    assert v.shape == (3,)
+    assert jnp.issubdtype(v.dtype, jnp.floating)
+
+
 def test_tangent_basis_is_orthonormal_and_orthogonal(key):
     d = 3
     xs = UniformOnSphere(d).sample(key, (8,))

@@ -185,6 +185,27 @@ def test_von_mises_fisher_high_d_log_prob_is_finite(key, d, concentration):
     assert jnp.allclose(log_prob, expected, atol=1e-3, rtol=1e-4)
 
 
+@pytest.mark.parametrize(
+    "d, concentration",
+    [(41, 800.0), (51, 500.0), (51, 1000.0)],
+)
+def test_von_mises_fisher_high_d_series_regime_matches_scipy(key, d, concentration):
+    """High-ν, moderate-κ falls under the Hankel threshold so the Bessel
+    series has to carry the accuracy burden. The series peak
+    ``k ≈ (√(ν² + κ²) − ν) / 2`` lands above 256 for d ≥ ~41 at κ of a few
+    hundred; truncating to 256 terms silently undercounts log I by 100+
+    log-units. Regression test against scipy to pin down the new
+    truncation depth.
+    """
+    mean = jnp.zeros(d + 1).at[0].set(1.0)
+    x = _normalize(jr.normal(jr.fold_in(key, d + int(concentration)), (d + 1,)))
+    dist = VonMisesFisher(mean, concentration)
+    expected = vonmises_fisher(mu=jnp.asarray(mean), kappa=concentration).logpdf(
+        jnp.asarray(x)
+    )
+    assert jnp.allclose(dist.log_prob(x), expected, atol=1e-2, rtol=1e-3)
+
+
 def test_von_mises_fisher_sample_at_large_kappa_is_finite(key):
     """Stable Wood ``b`` must keep high-κ sampling from hanging or NaN-ing."""
     dist = VonMisesFisher(jnp.array([0.0, 0.0, 1.0]), 500.0)
