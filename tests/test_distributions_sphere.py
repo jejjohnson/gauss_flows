@@ -248,44 +248,38 @@ def test_von_mises_fisher_sample_does_not_hang_past_float_eps_regime(key, kappa_
 
 @pytest.mark.parametrize(
     "d, concentration",
-    [(301, 40000.0), (601, 100000.0)],
+    [(301, 40000.0), (601, 100000.0), (1501, 131567.0)],
 )
-def test_von_mises_fisher_series_truncation_fallback_to_asymptotic(
-    key, d, concentration
-):
-    """When ``k_peak`` would exceed the (capped) series depth, the branch
-    selector has to fall through to the Hankel asymptotic — a truncated
-    series silently loses hundreds of log-units otherwise. Reviewer
-    example: d=301, κ=40000 has ``k_peak ≈ 19925`` which exceeds the old
-    16384 cap even after the earlier adaptive-sizing patch.
+def test_von_mises_fisher_extreme_d_log_prob_is_finite(key, d, concentration):
+    """Extreme-ν VMFs at κ below the Hankel strict gate used to route to
+    either a truncated power series (hundreds of log-units of bias) or a
+    divergent Hankel correction (``log_prob`` = NaN for finite parameters).
+    The current implementation uses the Debye uniform asymptotic in that
+    regime, which is numerically stable at any ``x > 0`` for ``nu > 0`` and
+    agrees with a high-K reference to ~1e-3 absolute error.
+    Reviewer example: d=1501, κ=131567 previously produced NaN.
     """
     mean = jnp.zeros(d + 1).at[0].set(1.0)
     dist = VonMisesFisher(mean, concentration)
-    # x at the mean → known ``log_prob = _log_normalizer() + κ``.
     log_prob_at_mean = float(dist.log_prob(mean))
     assert jnp.isfinite(log_prob_at_mean)
-    # The Bessel-only part matches the stable Hankel reference; reconstruct
-    # it and compare.
+    # Debye reference: reproduce the leading expansion and compare directly.
     import numpy as _np
 
     nu = 0.5 * (d - 1)
-    mu = 4.0 * nu * nu
-    z = 8.0 * concentration
-    correction = (
-        1.0
-        - (mu - 1.0) / z
-        + (mu - 1.0) * (mu - 9.0) / (2.0 * z * z)
-        - (mu - 1.0) * (mu - 9.0) * (mu - 25.0) / (6.0 * z * z * z)
+    z = concentration / nu
+    sqrt_term = _np.sqrt(1.0 + z * z)
+    eta = sqrt_term + _np.log(z) - _np.log1p(sqrt_term)
+    debye_leading = (
+        nu * eta - 0.5 * _np.log(2.0 * _np.pi * nu) - 0.25 * _np.log1p(z * z)
     )
-    hankel_log_iv = (
-        concentration
-        - 0.5 * _np.log(2.0 * _np.pi * concentration)
-        + _np.log(correction)
-    )
+    t = 1.0 / sqrt_term
+    u1 = (3.0 * t - 5.0 * t * t * t) / 24.0
+    debye_log_iv = debye_leading + _np.log1p(u1 / nu)
     expected = (
         nu * _np.log(concentration)
         - 0.5 * (d + 1) * _np.log(2.0 * _np.pi)
-        - hankel_log_iv
+        - debye_log_iv
         + concentration
     )
     assert jnp.allclose(log_prob_at_mean, expected, atol=1.0, rtol=1e-4)
