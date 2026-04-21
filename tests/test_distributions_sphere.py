@@ -248,6 +248,51 @@ def test_von_mises_fisher_sample_does_not_hang_past_float_eps_regime(key, kappa_
 
 @pytest.mark.parametrize(
     "d, concentration",
+    [(301, 40000.0), (601, 100000.0)],
+)
+def test_von_mises_fisher_series_truncation_fallback_to_asymptotic(
+    key, d, concentration
+):
+    """When ``k_peak`` would exceed the (capped) series depth, the branch
+    selector has to fall through to the Hankel asymptotic — a truncated
+    series silently loses hundreds of log-units otherwise. Reviewer
+    example: d=301, κ=40000 has ``k_peak ≈ 19925`` which exceeds the old
+    16384 cap even after the earlier adaptive-sizing patch.
+    """
+    mean = jnp.zeros(d + 1).at[0].set(1.0)
+    dist = VonMisesFisher(mean, concentration)
+    # x at the mean → known ``log_prob = _log_normalizer() + κ``.
+    log_prob_at_mean = float(dist.log_prob(mean))
+    assert jnp.isfinite(log_prob_at_mean)
+    # The Bessel-only part matches the stable Hankel reference; reconstruct
+    # it and compare.
+    import numpy as _np
+
+    nu = 0.5 * (d - 1)
+    mu = 4.0 * nu * nu
+    z = 8.0 * concentration
+    correction = (
+        1.0
+        - (mu - 1.0) / z
+        + (mu - 1.0) * (mu - 9.0) / (2.0 * z * z)
+        - (mu - 1.0) * (mu - 9.0) * (mu - 25.0) / (6.0 * z * z * z)
+    )
+    hankel_log_iv = (
+        concentration
+        - 0.5 * _np.log(2.0 * _np.pi * concentration)
+        + _np.log(correction)
+    )
+    expected = (
+        nu * _np.log(concentration)
+        - 0.5 * (d + 1) * _np.log(2.0 * _np.pi)
+        - hankel_log_iv
+        + concentration
+    )
+    assert jnp.allclose(log_prob_at_mean, expected, atol=1.0, rtol=1e-4)
+
+
+@pytest.mark.parametrize(
+    "d, concentration",
     [(71, 2400.0), (121, 7000.0), (301, 8000.0)],
 )
 def test_von_mises_fisher_very_high_d_log_prob_matches_scipy(key, d, concentration):

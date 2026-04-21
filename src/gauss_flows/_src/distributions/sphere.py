@@ -23,9 +23,13 @@ _LOG_2PI = jnp.log(2.0 * jnp.pi)
 # k_peak ≈ nu^2, so sizing the series as ``nu^2 + buffer`` leaves no gap
 # between the series and asymptotic regimes. Per-instance sizing is
 # clamped to [_VMF_SERIES_TERMS_MIN, _VMF_SERIES_TERMS_MAX] to keep the
-# default call fast while still covering high-d spheres.
+# default call fast while still covering high-d spheres. The cap is
+# complemented by a truncation-aware fallback inside ``_log_bessel_iv``
+# that routes to the asymptotic when the series peak would exceed
+# ``n_terms``, so raising the cap is only needed for compute reasons, not
+# correctness.
 _VMF_SERIES_TERMS_MIN = 1024
-_VMF_SERIES_TERMS_MAX = 16384
+_VMF_SERIES_TERMS_MAX = 65536
 # Crossover between the power series and the asymptotic expansion. Both
 # approximations are accurate around this value for ``nu`` in the small-integer
 # half-integer range that arises for spheres up to ``d ~ 20``.
@@ -79,17 +83,28 @@ def _log_bessel_iv(n_terms: int, nu: Array, x: Array) -> Array:
     x = jnp.asarray(x)
     nu_arr = jnp.asarray(nu, dtype=x.dtype)
     # The Hankel asymptotic's k-th correction scales like nu^{2k} / x^k, so
-    # it only converges when x >> nu^2. Gating on x alone lets high-d VMFs
-    # (large nu) pick the asymptotic inside its divergence region -- where
-    # 1 - (mu - 1)/(8x) + ... can turn negative and log(correction) becomes
-    # NaN. We require both x > _VMF_ASYMPTOTIC_THRESHOLD and x > 2*nu^2 + 1
-    # so the first-order correction stays below ~1/2. For ``x`` below the
-    # threshold the series carries the full load; ``n_terms`` must be large
-    # enough that the peak at k ≈ nu^2 is captured (see _vmf_series_terms).
-    threshold = jnp.maximum(
+    # strict convergence needs x >> nu^2; the primary gate at 2*nu^2+1 keeps
+    # the first-order correction below ~1/2. Inside the series regime,
+    # though, the peak at k ≈ (sqrt(nu^2 + x^2) - nu)/2 can still exceed
+    # `n_terms` when both nu and x are large and the cap forced a bounded
+    # n_terms. In that case the series silently undercounts, so add a
+    # fallback that routes to the asymptotic once x lies past the largest
+    # series-resolvable value: solving k_peak = n_terms - margin for x
+    # gives x ≈ 2*(n_terms - margin) + nu. Taking the minimum of the two
+    # thresholds picks the strict gate for small nu (matching the old
+    # behaviour) and the fallback for extreme nu where the series cap is
+    # the binding constraint. In the gap between the two the Hankel
+    # first-order correction can exceed 1/2 but stays bounded and well
+    # above zero for typical usage, which is strictly better than a
+    # truncated series that misses the dominant terms.
+    margin = jnp.asarray(128.0, dtype=x.dtype)
+    n_terms_arr = jnp.asarray(n_terms, dtype=x.dtype)
+    strict_asymp_threshold = jnp.maximum(
         jnp.asarray(_VMF_ASYMPTOTIC_THRESHOLD, dtype=x.dtype),
         2.0 * nu_arr * nu_arr + 1.0,
     )
+    series_max_x = 2.0 * (n_terms_arr - margin) + nu_arr
+    threshold = jnp.minimum(strict_asymp_threshold, series_max_x)
     use_asymptotic = x > threshold
     # Feed a safe input to each branch so the inactive path can't emit NaN/-inf
     # into the ``jnp.where`` gradient.
