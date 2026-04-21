@@ -3,7 +3,12 @@
 Public API re-exported from the private _src/ implementation directory.
 """
 
-from gauss_flows._src.distributions import GaussianMixture, GaussianPCA
+from gauss_flows._src.distributions import (
+    GaussianMixture,
+    GaussianPCA,
+    UniformOnSphere,
+    VonMisesFisher,
+)
 from gauss_flows._src.flows import (
     SurVAEFlow,
     coupling_gaussianization_flow,
@@ -52,6 +57,9 @@ from gauss_flows._src.transforms import (
     Squeeze,
     StochasticPermutation,
     SylvesterFlow,
+    expmap_sphere,
+    logmap_sphere,
+    tangent_basis,
 )
 from gauss_flows._src.transforms.base import AbstractStochastic, AbstractSurjection
 
@@ -97,13 +105,18 @@ __all__ = [
     "StochasticPermutation",
     "SurVAEFlow",
     "SylvesterFlow",
+    "UniformOnSphere",
+    "VonMisesFisher",
     "coupling_gaussianization_flow",
     "entropy",
+    "expmap_sphere",
     "fit_gaussianization_flow",
     "gaussianization_flow",
     "iterative_rbig",
     "kl_divergence",
+    "logmap_sphere",
     "mutual_information",
     "negentropy",
+    "tangent_basis",
     "total_correlation",
 ]
