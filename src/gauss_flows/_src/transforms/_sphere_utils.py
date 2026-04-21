@@ -95,9 +95,18 @@ def logmap_sphere(
     y_unit = _safe_normalize(y)
     cosine = jnp.clip(jnp.dot(x_unit, y_unit), -1.0, 1.0)
     tangent = y_unit - cosine * x_unit
-    tangent_norm = jnp.linalg.norm(tangent)
-    angle = jnp.arccos(cosine)
-    scale = jnp.where(tangent_norm > 1e-12, angle / tangent_norm, 1.0)
+    tangent_sq = jnp.sum(tangent * tangent)
+    # Double-where on ``tangent_sq`` so ``jnp.sqrt`` and the division have
+    # finite gradients even at ``y == x`` (where ``tangent == 0``). The
+    # ``arctan2`` form avoids the ``arccos`` boundary singularity at
+    # ``cosine == ±1`` (whose derivative is ``-∞``) which would otherwise leak
+    # NaN via ``0 · ∞`` in the inactive branch of the ``where``.
+    eps_sq = jnp.asarray(jnp.finfo(tangent.dtype).eps ** 2, dtype=tangent.dtype)
+    is_nonzero = tangent_sq > eps_sq
+    safe_tangent_sq = jnp.where(is_nonzero, tangent_sq, 1.0)
+    safe_norm = jnp.sqrt(safe_tangent_sq)
+    angle = jnp.arctan2(safe_norm, cosine)
+    scale = jnp.where(is_nonzero, angle / safe_norm, 1.0)
     return scale * tangent
 
 

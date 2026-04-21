@@ -109,3 +109,19 @@ def test_von_mises_fisher_jit_vmap_and_grad_smoke(key):
     grads = eqx.filter_grad(lambda vmf: vmf.log_prob(xs[0]))(dist)
     assert jnp.all(jnp.isfinite(grads.mean))
     assert jnp.isfinite(grads.concentration)
+
+
+def test_von_mises_fisher_vmap_over_batch_of_distributions(key):
+    """Constructor must be trace-safe so `vmap` across a batch of VMFs works."""
+    k_means, _k_kappas, k_x = jr.split(key, 3)
+    raw_means = jr.normal(k_means, (5, 3))
+    means = raw_means / jnp.linalg.norm(raw_means, axis=-1, keepdims=True)
+    concentrations = jnp.array([0.5, 1.0, 2.0, 5.0, 10.0])
+    x = _normalize(jr.normal(k_x, (3,)))
+
+    def log_prob_single(mean, concentration):
+        return VonMisesFisher(mean, concentration).log_prob(x)
+
+    log_probs = jax.vmap(log_prob_single)(means, concentrations)
+    assert log_probs.shape == (5,)
+    assert jnp.all(jnp.isfinite(log_probs))

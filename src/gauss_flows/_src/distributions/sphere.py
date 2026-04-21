@@ -17,7 +17,11 @@ from gauss_flows._src.transforms._sphere_utils import tangent_basis
 
 
 _LOG_2PI = jnp.log(2.0 * jnp.pi)
+# Truncated power-series approximation of log I_nu(kappa); accurate for kappa
+# up to a few hundred. For larger kappa an asymptotic expansion is required
+# (not yet implemented).
 _VMF_SERIES_TERMS = 256
+_ON_SPHERE_ATOL = 1e-5
 
 
 def _normalize_to_sphere(x: Array) -> Array:
@@ -31,7 +35,7 @@ def _log_surface_area_sphere(d: int) -> Array:
 
 
 def _log_bessel_iv(nu: Array, x: Array) -> Array:
-    x = jnp.asarray(x, dtype=float)
+    x = jnp.asarray(x)
     x_safe = jnp.maximum(x, jnp.finfo(x.dtype).tiny)
     ks = jnp.arange(_VMF_SERIES_TERMS, dtype=x.dtype)
     log_terms = (
@@ -80,7 +84,7 @@ class UniformOnSphere(AbstractDistribution):
     def _log_prob(self, x: Array, condition: Array | None = None) -> Array:
         del condition
         x = jnp.asarray(x)
-        on_sphere = jnp.isclose(jnp.linalg.norm(x), 1.0, atol=1e-6)
+        on_sphere = jnp.isclose(jnp.linalg.norm(x), 1.0, atol=_ON_SPHERE_ATOL)
         log_density = -_log_surface_area_sphere(self.d)
         return jnp.where(on_sphere, log_density, -jnp.inf)
 
@@ -112,21 +116,19 @@ class VonMisesFisher(AbstractDistribution):
     concentration: Array
 
     def __init__(self, mean: ArrayLike, concentration: ArrayLike):
-        mean_array = jnp.asarray(mean, dtype=float)
+        mean_array = jnp.asarray(mean)
         if mean_array.ndim != 1:
             raise ValueError("mean must have shape (d+1,).")
         if mean_array.shape[0] < 2:
             raise ValueError("mean must live in at least two ambient dimensions.")
-        mean_norm = jnp.linalg.norm(mean_array)
-        if mean_norm.item() <= jnp.finfo(mean_array.dtype).tiny:
-            raise ValueError("mean must be non-zero.")
-        concentration_array = jnp.asarray(concentration, dtype=float)
+        concentration_array = jnp.asarray(concentration, dtype=mean_array.dtype)
         if concentration_array.shape != ():
             raise ValueError("concentration must be a scalar.")
-        if concentration_array.item() < 0.0:
-            raise ValueError("concentration must be non-negative.")
+        # Zero-mean and negative-concentration are caller errors and propagate
+        # as NaN / invalid samples rather than being guarded here so the
+        # constructor stays jit/vmap-traceable (e.g. mixture of VMFs).
         self.shape = mean_array.shape
-        self.mean = mean_array / mean_norm
+        self.mean = _normalize_to_sphere(mean_array)
         self.concentration = concentration_array
 
     @property
@@ -179,10 +181,9 @@ class VonMisesFisher(AbstractDistribution):
 
     def _sample(self, key: PRNGKeyArray, condition: Array | None = None) -> Array:
         del condition
-        uniform = UniformOnSphere(self.d)
 
         def sample_uniform(sample_key: PRNGKeyArray) -> Array:
-            return uniform._sample(sample_key)
+            return _normalize_to_sphere(jr.normal(sample_key, self.shape))
 
         def sample_vmf(sample_key: PRNGKeyArray) -> Array:
             key_w, key_v = jr.split(sample_key)
@@ -199,7 +200,7 @@ class VonMisesFisher(AbstractDistribution):
     def _log_prob(self, x: Array, condition: Array | None = None) -> Array:
         del condition
         x = jnp.asarray(x)
-        on_sphere = jnp.isclose(jnp.linalg.norm(x), 1.0, atol=1e-6)
+        on_sphere = jnp.isclose(jnp.linalg.norm(x), 1.0, atol=_ON_SPHERE_ATOL)
         log_density = self._log_normalizer() + self.concentration * jnp.dot(
             self.mean, x
         )

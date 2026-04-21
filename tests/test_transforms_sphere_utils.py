@@ -30,6 +30,28 @@ def test_expmap_and_logmap_roundtrip(key):
     assert jnp.allclose(jax.vmap(expmap_sphere)(xs, vs_back), ys, atol=1e-5)
 
 
+def test_expmap_and_logmap_roundtrip_large_angle(key):
+    """Roundtrip must survive angles well away from the sinc-small regime."""
+    xs = UniformOnSphere(2).sample(key, (16,))
+    basis = jax.vmap(tangent_basis)(xs)
+    coeffs = jr.normal(jr.fold_in(key, 1), (16, 2)) * 1.5
+    vs = jnp.einsum("bij,bj->bi", basis, coeffs)
+    ys = jax.vmap(expmap_sphere)(xs, vs)
+    vs_back = jax.vmap(logmap_sphere)(xs, ys)
+    assert jnp.allclose(vs_back, vs, atol=1e-4)
+
+
+def test_logmap_grad_at_coincident_point_is_finite(key):
+    """`grad(logmap)` at x == y must not leak NaN via the 0/0 double-where."""
+    x = UniformOnSphere(2).sample(key)
+
+    def loss(y):
+        return jnp.sum(logmap_sphere(x, y))
+
+    grad_at_coincident = jax.grad(loss)(x)
+    assert jnp.all(jnp.isfinite(grad_at_coincident))
+
+
 def test_sphere_utils_jit_vmap_and_grad_smoke(key):
     d = 2
     x = UniformOnSphere(d).sample(key)
