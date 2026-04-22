@@ -20,6 +20,7 @@ from gauss_flows._src.transforms.bijections.coupling import (
     CircularRQSplineCoupling,
     ContinuousAffineCoupling,
     DeepSigmoidCoupling,
+    MixtureGaussianCDFCoupling,
     RQSplineCoupling,
 )
 from gauss_flows._src.transforms.bijections.elementwise import (
@@ -66,6 +67,7 @@ __all__ = [
     "Invertible1x1Conv",
     "LULinearPermute",
     "MixtureGaussianCDF",
+    "MixtureGaussianCDFCoupling",
     "MixtureLogisticCDF",
     "Orthogonal1x1Conv",
     "OrthogonalConvExponential",
