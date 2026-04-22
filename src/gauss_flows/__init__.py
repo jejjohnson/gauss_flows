@@ -3,6 +3,13 @@
 Public API re-exported from the private _src/ implementation directory.
 """
 
+from __future__ import annotations
+
+from gauss_flows._src.conditioning import (
+    pack_time_control,
+    time_control_cond_shape,
+    unpack_time_control,
+)
 from gauss_flows._src.distributions import (
     GaussianMixture,
     GaussianPCA,
@@ -23,6 +30,7 @@ from gauss_flows._src.info_theory import (
     negentropy,
     total_correlation,
 )
+from gauss_flows._src.nn import TimeFourier, TimeIdentity, TimeTanh
 from gauss_flows._src.transforms import (
     VAE,
     ActNorm,
@@ -32,6 +40,7 @@ from gauss_flows._src.transforms import (
     BatchNorm,
     CircularRationalQuadraticSpline,
     CircularRQSplineCoupling,
+    ContinuousAffineCoupling,
     DeepSigmoidCoupling,
     FixedRotation,
     HaarWavelet,
@@ -75,6 +84,7 @@ __all__ = [
     "BatchNorm",
     "CircularRQSplineCoupling",
     "CircularRationalQuadraticSpline",
+    "ContinuousAffineCoupling",
     "DeepSigmoidCoupling",
     "FixedRotation",
     "FlowDist",
@@ -105,6 +115,9 @@ __all__ = [
     "StochasticPermutation",
     "SurVAEFlow",
     "SylvesterFlow",
+    "TimeFourier",
+    "TimeIdentity",
+    "TimeTanh",
     "UniformOnSphere",
     "VonMisesFisher",
     "coupling_gaussianization_flow",
@@ -117,6 +130,9 @@ __all__ = [
     "logmap_sphere",
     "mutual_information",
     "negentropy",
+    "pack_time_control",
     "tangent_basis",
+    "time_control_cond_shape",
     "total_correlation",
+    "unpack_time_control",
 ]

@@ -12,10 +12,13 @@ SurVAE taxonomy:
 - :mod:`.classic` — low-expressivity VI-only flows (Planar, Sylvester).
 """
 
+from __future__ import annotations
+
 from gauss_flows._src.transforms.bijections.classic import PlanarFlow, SylvesterFlow
 from gauss_flows._src.transforms.bijections.coupling import (
     AffineCoupling,
     CircularRQSplineCoupling,
+    ContinuousAffineCoupling,
     DeepSigmoidCoupling,
     RQSplineCoupling,
 )
@@ -53,6 +56,7 @@ __all__ = [
     "BatchNorm",
     "CircularRQSplineCoupling",
     "CircularRationalQuadraticSpline",
+    "ContinuousAffineCoupling",
     "DeepSigmoidCoupling",
     "FixedRotation",
     "HaarWavelet",
