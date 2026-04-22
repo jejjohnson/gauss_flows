@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 import jax.random as jr
-import paramax
 import pytest
 
 from gauss_flows import FixedRotation, MixtureGaussianCDF
@@ -14,11 +13,9 @@ class TestFixedRotationFromData:
     def test_rotation_is_orthogonal(self, data_4d):
         rot = FixedRotation.from_data(data_4d)
         d = data_4d.shape[-1]
-        # matrix is wrapped in paramax.non_trainable to prevent Adam from
-        # drifting it off the orthogonal manifold during gradient training.
-        M = paramax.unwrap(rot.matrix)
-        assert M.shape == (d, d)
-        should_be_eye = M @ M.T
+        assert rot.matrix.shape == (d, d)
+        # Orthogonal: Q Q^T = I.
+        should_be_eye = rot.matrix @ rot.matrix.T
         assert jnp.allclose(should_be_eye, jnp.eye(d), atol=1e-5)
 
     def test_rotation_decorrelates(self, key):

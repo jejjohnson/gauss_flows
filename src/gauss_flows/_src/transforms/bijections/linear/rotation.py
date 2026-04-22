@@ -106,32 +106,40 @@ class FixedRotation(AbstractBijection):
     Useful when the rotation is pre-computed (e.g. via PCA) and should
     not be updated during training.
 
+    The orthogonal matrix is stored internally wrapped in
+    :class:`paramax.NonTrainable` so ``flowjax.train.fit_to_data`` skips it
+    during gradient descent — without the wrapper Adam drifts the rows off
+    the orthogonal manifold and sampling silently collapses while
+    ``log_prob`` keeps reporting plausible numbers. The public ``matrix``
+    attribute transparently returns the unwrapped :class:`jax.Array` so
+    downstream code can still do ``rot.matrix @ x`` unchanged.
+
     Args:
-        matrix: Orthogonal rotation matrix of shape (n_dims, n_dims).
+        matrix: Orthogonal rotation matrix of shape ``(n_dims, n_dims)``.
     """
 
     shape: tuple[int, ...]
     cond_shape: ClassVar[None] = None
-    matrix: Array
+    _matrix: paramax.NonTrainable
 
     def __init__(self, matrix: ArrayLike):
         matrix = jnp.asarray(matrix, dtype=float)
         if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
             raise ValueError("matrix must be a square 2D array.")
         self.shape = (matrix.shape[0],)
-        # Wrap in paramax.non_trainable so gradient training (via
-        # flowjax.train.fit_to_data) leaves the matrix untouched. Without
-        # this, Adam drifts the rows off the orthogonal manifold and the
-        # inverse stops being a true inverse — sampling collapses while
-        # log_prob still looks fine.
-        self.matrix = paramax.non_trainable(matrix)
+        self._matrix = paramax.non_trainable(matrix)
+
+    @property
+    def matrix(self) -> Array:
+        """The orthogonal rotation matrix (unwrapped from NonTrainable)."""
+        return paramax.unwrap(self._matrix)
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
-        y = paramax.unwrap(self.matrix) @ jnp.asarray(x)
+        y = self.matrix @ jnp.asarray(x)
         return y, jnp.zeros(())
 
     def inverse_and_log_det(self, y: ArrayLike, condition=None):
-        x = paramax.unwrap(self.matrix).T @ jnp.asarray(y)
+        x = self.matrix.T @ jnp.asarray(y)
         return x, jnp.zeros(())
 
     @classmethod

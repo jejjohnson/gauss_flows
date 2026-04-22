@@ -26,7 +26,7 @@ import jax.numpy as jnp
 import numpy as np
 from flowjax.bijections import Chain, Flip, Invert
 from flowjax.distributions import Normal, Transformed
-from jaxtyping import ArrayLike
+from jaxtyping import ArrayLike, PRNGKeyArray
 from paramax.utils import inv_softplus
 from sklearn.mixture import GaussianMixture
 
@@ -161,15 +161,6 @@ def fit_rbig(
     base_dist = Normal(jnp.zeros(n_dims))
     bijection = Invert(Chain(bijections))
     return Transformed(base_dist, bijection)
-
-
-def _coupling_params_shape(bij: MixtureGaussianCDFCoupling) -> tuple[int, int]:
-    """Return ``(d_b, params_per_dim)`` for the coupling's conditioner."""
-    d = bij.shape[0]
-    d_a = d // 2
-    d_b = d - d_a
-    params_per_dim = 3 * bij.n_components
-    return d_b, params_per_dim
 
 
 def _pack_coupling_bias(
@@ -308,6 +299,14 @@ def _init_coupling_from_fits(
         _invert_clamp_log_scale(jnp.asarray(clamped_log_scales), bij.log_scale_bound)
     )
 
+    # Sigmas that the coupling's forward will actually use, after the
+    # tanh bound is applied. Identical to `sigmas` when |log sigma| <
+    # bound, otherwise clipped to exp(+/-bound). State propagation below
+    # must use these (not raw `sigmas`) so we match the flow's real
+    # trajectory when any fitted component falls outside exp(+/-bound).
+    effective_log_scales = bij.log_scale_bound * np.tanh(raw_log_scales)
+    effective_sigmas = np.exp(effective_log_scales).astype(np.float32)
+
     bias = _pack_coupling_bias(log_weights, means, raw_log_scales)
 
     # Zero the final Dense kernel and set its bias to the packed params.
@@ -325,17 +324,16 @@ def _init_coupling_from_fits(
     new_coupling = eqx.tree_at(lambda c: c.conditioner, bij._coupling, new_mlp)
     new_bij = eqx.tree_at(lambda b: b._coupling, bij, new_coupling)
 
-    # Advance y through a MixtureGaussianCDF-style forward on the b-dims.
-    # This mirrors exactly what `fit_rbig` would do at this step, so the
-    # two warm starts share identical per-block states (and therefore
-    # identical GMM fits at every subsequent block).
-    y_new = _push_forward_b_half_diag(y, b_idx, weights, means, sigmas)
+    # Advance y through a MixtureGaussianCDF-style forward on the b-dims
+    # using the *effective* sigmas (bound-clamped), matching what the
+    # initialized coupling's forward pass will actually compute.
+    y_new = _push_forward_b_half_diag(y, b_idx, weights, means, effective_sigmas)
     return new_bij, y_new
 
 
 def fit_rbig_coupling(
     x: ArrayLike,
-    key,
+    key: PRNGKeyArray,
     *,
     n_layers: int = 6,
     n_components: int = 8,

@@ -59,9 +59,10 @@ class MixtureGaussianCDF(AbstractBijection):
 
         The per-dim component means are placed at evenly spaced quantiles
         of ``x[:, i]``, and the log-scales are set so ``softplus(log_scale)
-        + 5e-3`` matches the inter-quantile spacing × per-dim std. Weights
-        remain uniform. This gives a meaningful first forward pass without
-        running the full RBIG fit.
+        + 5e-3`` matches the inter-quantile spacing × per-dim std — each
+        dim gets its *own* target scale based on its own standard deviation.
+        Weights remain uniform. This gives a meaningful first forward pass
+        without running the full RBIG fit.
 
         Args:
             x: Training data of shape ``(n, d)``.
@@ -81,14 +82,20 @@ class MixtureGaussianCDF(AbstractBijection):
         means = np.stack(
             [np.quantile(x[:, i], qs) for i in range(n_dims)], axis=0
         ).astype("float32")
-        data_std = float(x.std(axis=0).mean())
+        data_std_per_dim = np.asarray(x.std(axis=0), dtype=np.float32)  # (d,)
         if n_components > 1:
-            target_scale = max(float(np.mean(np.diff(qs)) * data_std), 0.1)
+            target_scale = np.maximum(
+                float(np.mean(np.diff(qs))) * data_std_per_dim, 0.1
+            )
         else:
-            target_scale = max(data_std, 0.1)
+            target_scale = np.maximum(data_std_per_dim, 0.1)
         # softplus(raw) + 5e-3 ≈ target_scale → raw = inv_softplus(target_scale - 5e-3)
-        raw_log_scale = float(inv_softplus(max(target_scale - 5e-3, 5e-3)))
-        log_scales = jnp.full((n_dims, n_components), raw_log_scale)
+        raw_log_scale_per_dim = np.asarray(
+            inv_softplus(jnp.asarray(np.maximum(target_scale - 5e-3, 5e-3)))
+        )  # (d,)
+        log_scales = jnp.broadcast_to(
+            jnp.asarray(raw_log_scale_per_dim)[:, None], (n_dims, n_components)
+        )
 
         obj = cls(n_components=n_components, shape=(n_dims,))
         obj = eqx.tree_at(lambda m: m.means, obj, jnp.asarray(means))
