@@ -23,6 +23,7 @@ from gauss_flows._src.flows import (
     iterative_rbig,
 )
 from gauss_flows._src.inference import FlowDist, FlowGuide, fit_gaussianization_flow
+from gauss_flows._src.init import fit_rbig, fit_rbig_coupling
 from gauss_flows._src.info_theory import (
     entropy,
     kl_divergence,
@@ -126,6 +127,8 @@ __all__ = [
     "entropy",
     "expmap_sphere",
     "fit_gaussianization_flow",
+    "fit_rbig",
+    "fit_rbig_coupling",
     "gaussianization_flow",
     "iterative_rbig",
     "kl_divergence",
