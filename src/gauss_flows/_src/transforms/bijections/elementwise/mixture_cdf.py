@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.scipy.stats as jstats
@@ -43,6 +44,52 @@ class MixtureGaussianCDF(AbstractBijection):
         self.means = jnp.zeros((n_dims, n_components))
         self.log_scales = jnp.zeros((n_dims, n_components))
         self.log_weights = jnp.zeros((n_dims, n_components))
+
+    @classmethod
+    def from_data(
+        cls,
+        x: ArrayLike,
+        n_components: int = 8,
+    ) -> "MixtureGaussianCDF":
+        """Build a marginal layer with means at per-dim quantiles of ``x``.
+
+        The per-dim component means are placed at evenly spaced quantiles
+        of ``x[:, i]``, and the log-scales are set so ``softplus(log_scale)
+        + 1e-5`` matches the inter-quantile spacing × per-dim std. Weights
+        remain uniform. This gives a meaningful first forward pass without
+        running the full RBIG fit.
+
+        Args:
+            x: Training data of shape ``(n, d)``.
+            n_components: Mixture components ``K``. Defaults to 8.
+
+        Returns:
+            A :class:`MixtureGaussianCDF` with data-adapted means/log-scales.
+        """
+        import numpy as np
+        from paramax.utils import inv_softplus
+
+        x = np.asarray(x)
+        if x.ndim != 2:
+            raise ValueError(f"x must be 2-D (n, d); got shape {x.shape}")
+        n_dims = x.shape[-1]
+        qs = np.linspace(0.5 / n_components, 1.0 - 0.5 / n_components, n_components)
+        means = np.stack(
+            [np.quantile(x[:, i], qs) for i in range(n_dims)], axis=0
+        ).astype("float32")
+        data_std = float(x.std(axis=0).mean())
+        if n_components > 1:
+            target_scale = max(float(np.mean(np.diff(qs)) * data_std), 0.1)
+        else:
+            target_scale = max(data_std, 0.1)
+        # softplus(raw) + 1e-5 ≈ target_scale → raw = inv_softplus(target_scale - 1e-5)
+        raw_log_scale = float(inv_softplus(max(target_scale - 1e-5, 1e-5)))
+        log_scales = jnp.full((n_dims, n_components), raw_log_scale)
+
+        obj = cls(n_components=n_components, shape=(n_dims,))
+        obj = eqx.tree_at(lambda m: m.means, obj, jnp.asarray(means))
+        obj = eqx.tree_at(lambda m: m.log_scales, obj, log_scales)
+        return obj
 
     def _gmm_cdf(self, x: Array, means: Array, scales: Array, weights: Array) -> Array:
         """CDF of a 1D Gaussian mixture evaluated at x."""

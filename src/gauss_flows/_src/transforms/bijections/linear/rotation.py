@@ -128,5 +128,31 @@ class FixedRotation(AbstractBijection):
         x = self.matrix.T @ jnp.asarray(y)
         return x, jnp.zeros(())
 
+    @classmethod
+    def from_data(cls, x: ArrayLike) -> "FixedRotation":
+        """Build a PCA rotation from the eigenvectors of ``cov(x)``.
+
+        The rotation is the matrix whose rows are the principal axes of
+        ``x``, in descending-eigenvalue order, so that ``y = rotation(x)``
+        is the decorrelating PCA projection.
+
+        Args:
+            x: Training data of shape ``(n, d)``.
+
+        Returns:
+            A :class:`FixedRotation` whose matrix is the PCA rotation of ``x``.
+        """
+        x = jnp.asarray(x, dtype=float)
+        if x.ndim != 2:
+            raise ValueError(f"x must be 2-D (n, d); got shape {x.shape}")
+        xc = x - jnp.mean(x, axis=0, keepdims=True)
+        cov = (xc.T @ xc) / jnp.maximum(x.shape[0] - 1, 1)
+        eigvals, eigvecs = jnp.linalg.eigh(cov)
+        # eigh returns ascending eigvals; reverse for PCA convention, then
+        # transpose so rows are principal axes (y = matrix @ x).
+        del eigvals
+        matrix = eigvecs[:, ::-1].T
+        return cls(matrix)
+
 
 __all__ = ["FixedRotation", "HouseholderRotation", "OrthogonalRotation"]
