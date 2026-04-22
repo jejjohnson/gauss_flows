@@ -104,7 +104,5 @@ class TestMixtureCouplingTraining:
         inexact = eqx.filter(grad, eqx.is_inexact_array)
         leaves = jax.tree.leaves(inexact)
         assert any(
-            float(jnp.max(jnp.abs(leaf))) > 0.0
-            for leaf in leaves
-            if leaf is not None
+            float(jnp.max(jnp.abs(leaf))) > 0.0 for leaf in leaves if leaf is not None
         )

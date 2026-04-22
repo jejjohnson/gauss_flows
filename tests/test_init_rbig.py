@@ -101,3 +101,35 @@ class TestFitRbigCoupling:
     def test_min_dims(self, key2):
         with pytest.raises(ValueError, match="n_dims >= 2"):
             fit_rbig_coupling(jnp.zeros((10, 1)), key2)
+
+    def test_survives_gradient_training(self, key, key2):
+        """Gradient training on a fit_rbig_coupling flow must leave it a true
+        bijection — sampling must round-trip to within float32 epsilon.
+
+        Regression guard: if ``FixedRotation.matrix`` is trainable, Adam
+        drifts it off the orthogonal manifold, the inverse stops matching
+        the forward, and ``flow.sample`` collapses to a narrow blob.
+        """
+        import jax
+        from flowjax.train import fit_to_data
+
+        x = jr.normal(key, (512, 2))
+        flow = fit_rbig_coupling(x, key2, n_layers=2, n_components=4)
+        trained, _ = fit_to_data(
+            jr.fold_in(key, 99),
+            flow,
+            x,
+            learning_rate=1e-3,
+            max_epochs=5,
+            max_patience=5,
+            batch_size=128,
+            val_prop=0.1,
+            show_progress=False,
+        )
+        xs = x[:32]
+        zs = jax.vmap(trained.bijection.inverse)(xs)
+        xs_rec = jax.vmap(trained.bijection.transform)(zs)
+        assert jnp.allclose(xs, xs_rec, atol=1e-4), (
+            "Trained flow is not a true bijection — FixedRotation.matrix "
+            "may have drifted off the orthogonal manifold."
+        )

@@ -45,17 +45,21 @@ class MixtureGaussianCDF(AbstractBijection):
         self.log_scales = jnp.zeros((n_dims, n_components))
         self.log_weights = jnp.zeros((n_dims, n_components))
 
+    def _scales(self) -> Array:
+        """σ = softplus(log_scales) + 5e-3 (soft floor for training stability)."""
+        return softplus(self.log_scales) + 5e-3
+
     @classmethod
     def from_data(
         cls,
         x: ArrayLike,
         n_components: int = 8,
-    ) -> "MixtureGaussianCDF":
+    ) -> MixtureGaussianCDF:
         """Build a marginal layer with means at per-dim quantiles of ``x``.
 
         The per-dim component means are placed at evenly spaced quantiles
         of ``x[:, i]``, and the log-scales are set so ``softplus(log_scale)
-        + 1e-5`` matches the inter-quantile spacing × per-dim std. Weights
+        + 5e-3`` matches the inter-quantile spacing × per-dim std. Weights
         remain uniform. This gives a meaningful first forward pass without
         running the full RBIG fit.
 
@@ -82,8 +86,8 @@ class MixtureGaussianCDF(AbstractBijection):
             target_scale = max(float(np.mean(np.diff(qs)) * data_std), 0.1)
         else:
             target_scale = max(data_std, 0.1)
-        # softplus(raw) + 1e-5 ≈ target_scale → raw = inv_softplus(target_scale - 1e-5)
-        raw_log_scale = float(inv_softplus(max(target_scale - 1e-5, 1e-5)))
+        # softplus(raw) + 5e-3 ≈ target_scale → raw = inv_softplus(target_scale - 5e-3)
+        raw_log_scale = float(inv_softplus(max(target_scale - 5e-3, 5e-3)))
         log_scales = jnp.full((n_dims, n_components), raw_log_scale)
 
         obj = cls(n_components=n_components, shape=(n_dims,))
@@ -105,7 +109,7 @@ class MixtureGaussianCDF(AbstractBijection):
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
         x = jnp.asarray(x)
-        scales = softplus(self.log_scales) + 1e-5
+        scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
 
         # GMM CDF -> uniform -> probit (inverse normal CDF)
@@ -124,11 +128,14 @@ class MixtureGaussianCDF(AbstractBijection):
         from gauss_flows._src.utils import bisection_inverse
 
         y = jnp.asarray(y)
-        scales = softplus(self.log_scales) + 1e-5
+        scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
 
-        # Probit -> uniform CDF
-        u = jax.scipy.special.ndtr(y)
+        # Probit -> uniform CDF. Clip so float32 tail saturation
+        # (|y| >~ 5 gives ndtr(y) ∈ {0, 1}) doesn't collapse bisection
+        # to the [-100, 100] bounds, which would otherwise produce
+        # ray/X-pattern artifacts in samples.
+        u = jnp.clip(jax.scipy.special.ndtr(y), 1e-6, 1.0 - 1e-6)
 
         # Invert GMM CDF: find x such that GMM_CDF(x) = u
         def _cdf_i(u_i, means_i, scales_i, weights_i):
@@ -173,6 +180,10 @@ class MixtureLogisticCDF(AbstractBijection):
         self.log_scales = jnp.zeros((n_dims, n_components))
         self.log_weights = jnp.zeros((n_dims, n_components))
 
+    def _scales(self) -> Array:
+        """σ = softplus(log_scales) + 5e-3."""
+        return softplus(self.log_scales) + 5e-3
+
     def _mixture_cdf(
         self, x: Array, means: Array, scales: Array, weights: Array
     ) -> Array:
@@ -190,7 +201,7 @@ class MixtureLogisticCDF(AbstractBijection):
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
         x = jnp.asarray(x)
-        scales = softplus(self.log_scales) + 1e-5
+        scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
 
         u = self._mixture_cdf(x, self.means, scales, weights)
@@ -206,10 +217,10 @@ class MixtureLogisticCDF(AbstractBijection):
         from gauss_flows._src.utils import bisection_inverse
 
         y = jnp.asarray(y)
-        scales = softplus(self.log_scales) + 1e-5
+        scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
 
-        u = jax.scipy.special.ndtr(y)
+        u = jnp.clip(jax.scipy.special.ndtr(y), 1e-6, 1.0 - 1e-6)
 
         def _cdf_i(u_i, means_i, scales_i, weights_i):
             def _fn(xi):

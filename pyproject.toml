@@ -61,6 +61,7 @@ docs = [
     "jupytext>=1.19.1",
     "ipykernel>=6.29",
     "matplotlib>=3.10.8",
+    "seaborn>=0.13",
 ]
 
 [build-system]
@@ -77,6 +78,11 @@ line-length = 88
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 ignore = ["E402", "E721", "E731", "E741", "RUF002"]
+
+[tool.ruff.lint.per-file-ignores]
+# Docs notebooks mix pedagogical exposition with tight plotting calls;
+# allow longer lines, skip zip(strict=...) / closure-capture pedantry.
+"docs/notebooks/*.ipynb" = ["E501", "B023", "B905", "F541"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true

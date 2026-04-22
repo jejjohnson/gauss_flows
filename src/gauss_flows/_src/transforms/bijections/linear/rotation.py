@@ -3,6 +3,7 @@
 from typing import ClassVar
 
 import jax.numpy as jnp
+import paramax
 from flowjax.bijections import AbstractBijection
 from jax import Array
 from jaxtyping import ArrayLike
@@ -118,14 +119,19 @@ class FixedRotation(AbstractBijection):
         if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
             raise ValueError("matrix must be a square 2D array.")
         self.shape = (matrix.shape[0],)
-        self.matrix = matrix
+        # Wrap in paramax.non_trainable so gradient training (via
+        # flowjax.train.fit_to_data) leaves the matrix untouched. Without
+        # this, Adam drifts the rows off the orthogonal manifold and the
+        # inverse stops being a true inverse — sampling collapses while
+        # log_prob still looks fine.
+        self.matrix = paramax.non_trainable(matrix)
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
-        y = self.matrix @ jnp.asarray(x)
+        y = paramax.unwrap(self.matrix) @ jnp.asarray(x)
         return y, jnp.zeros(())
 
     def inverse_and_log_det(self, y: ArrayLike, condition=None):
-        x = self.matrix.T @ jnp.asarray(y)
+        x = paramax.unwrap(self.matrix).T @ jnp.asarray(y)
         return x, jnp.zeros(())
 
     @classmethod

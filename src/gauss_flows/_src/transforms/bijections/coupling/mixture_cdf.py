@@ -95,7 +95,10 @@ class _MixtureGaussianCDFTransformer(AbstractBijection):
         # Affine seed: E[x] under the mixture. optx.Bisection with
         # expand_if_necessary=True widens the bracket until it spans the root.
         approx_center = jnp.sum(weights * means, axis=-1)
-        u_target = jsp_special.ndtr(z)
+        # Clip ndtr(z) to keep the bisection target inside (0, 1). Without
+        # this, |z| >~ 5 saturates ndtr to exactly {0, 1} in float32, the
+        # root-find degenerates, and samples collapse to a narrow blob.
+        u_target = jnp.clip(jsp_special.ndtr(z), 1e-6, 1.0 - 1e-6)
 
         def residual(x, args):
             _z_target = args

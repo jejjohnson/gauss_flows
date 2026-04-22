@@ -24,11 +24,10 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from flowjax.bijections import Chain, Invert
+from flowjax.bijections import Chain, Flip, Invert
 from flowjax.distributions import Normal, Transformed
 from jaxtyping import ArrayLike
 from paramax.utils import inv_softplus
-from sklearn.decomposition import PCA
 from sklearn.mixture import GaussianMixture
 
 from gauss_flows._src.transforms.bijections.coupling.mixture_cdf import (
@@ -39,9 +38,6 @@ from gauss_flows._src.transforms.bijections.elementwise.mixture_cdf import (
     MixtureGaussianCDF,
 )
 from gauss_flows._src.transforms.bijections.linear.rotation import FixedRotation
-
-
-_SCALE_FLOOR = 1e-5
 
 
 def _dim_seed(block_idx: int, dim_idx: int, random_state: int) -> int:
@@ -78,7 +74,7 @@ def _fit_marginal(
     Translates sklearn's ``(weights, means, scales)`` into the
     :class:`MixtureGaussianCDF` convention, where the stored
     ``log_weights``, ``means``, ``log_scales`` are used as
-    ``softmax(log_weights)`` and ``softplus(log_scales) + 1e-5`` at
+    ``softmax(log_weights)`` and ``softplus(log_scales) + 5e-3`` at
     forward time.
     """
     n, d = y.shape
@@ -92,8 +88,8 @@ def _fit_marginal(
         )
         log_weights[i] = np.log(np.maximum(w, 1e-20))
         means[i] = mu
-        # softplus(raw) + 1e-5 ≈ sigma → raw = inv_softplus(sigma - 1e-5).
-        sigma_target = np.maximum(sigma - _SCALE_FLOOR, _SCALE_FLOOR)
+        # softplus(raw) + 5e-3 ≈ sigma → raw = inv_softplus(sigma - 5e-3).
+        sigma_target = np.maximum(sigma - 5e-3, 5e-3)
         raw_log_scales[i] = np.asarray(inv_softplus(sigma_target))
 
     marg = MixtureGaussianCDF(n_components=n_components, shape=(d,))
@@ -211,37 +207,105 @@ def _pack_coupling_bias(
     return stacked.reshape(-1)
 
 
+def _push_forward_b_half_diag(
+    y: np.ndarray,
+    b_idx: np.ndarray,
+    weights: np.ndarray,
+    means: np.ndarray,
+    sigmas: np.ndarray,
+) -> np.ndarray:
+    """Advance state via the ``MixtureGaussianCDF`` forward on ``y[:, b_idx]``.
+
+    Used by :func:`fit_rbig_coupling` to propagate state between blocks
+    along the *same* numerical path as :func:`fit_rbig`, so the two warm
+    starts see identical ``y`` states at every block and their GMM fits
+    agree exactly. Without this, each coupling's slightly different
+    numerical forward (different log-pdf formula, different scale
+    parameterisation) produces accumulated drift in ``y`` that breaks
+    the zero-kernel equivalence at higher block counts.
+
+    Args:
+        y: Current data state ``(n, d)``.
+        b_idx: Indices of dims the coupling transforms (``d_b`` of them).
+        weights: Mixture weights ``(d_b, K)`` (already softmaxed).
+        means: Mixture means ``(d_b, K)``.
+        sigmas: Mixture scales ``(d_b, K)`` (σ, not log σ).
+
+    Returns:
+        ``y_new`` with the ``b_idx`` columns replaced by the Gaussianized
+        values and the rest unchanged.
+    """
+    import jax.scipy.special as jsp_special
+    import jax.scipy.stats as jstats
+
+    y_b = jnp.asarray(y[:, b_idx])  # (n, d_b)
+    weights_j = jnp.asarray(weights)  # (d_b, K)
+    means_j = jnp.asarray(means)
+    sigmas_j = jnp.asarray(sigmas)
+    cdfs = jstats.norm.cdf(y_b[:, :, None], loc=means_j, scale=sigmas_j)
+    u = jnp.sum(weights_j * cdfs, axis=-1)
+    u = jnp.clip(u, 1e-6, 1 - 1e-6)
+    z_b = jsp_special.ndtri(u)
+    y_new = np.asarray(y).copy()
+    y_new[:, b_idx] = np.asarray(z_b)
+    return y_new
+
+
 def _init_coupling_from_fits(
     bij: MixtureGaussianCDFCoupling,
     y: np.ndarray,
     block_idx: int,
     random_state: int,
-) -> MixtureGaussianCDFCoupling:
-    """Overwrite the coupling's conditioner so forward ≈ per-dim mixture fit."""
+    seed_dim_idx: np.ndarray | None = None,
+) -> tuple[MixtureGaussianCDFCoupling, np.ndarray]:
+    """Overwrite the coupling's conditioner so forward ≈ per-dim mixture fit.
+
+    Args:
+        bij: Coupling bijection to re-init.
+        y: Current data state ``(n, d)``. GMM is fit on ``y[:, b_idx]``.
+        block_idx: Block index used to seed GMM EM.
+        random_state: Base seed.
+        seed_dim_idx: Original dim indices (in the pre-any-flip frame) that
+            the current ``b`` positions correspond to. Length must equal
+            ``d_b``. Used only to seed the GMM EM — matches the convention
+            in the research-notebook mask-based coupling, so that zero-kernel
+            couplings paired via flips produce the *same* fits as the
+            diagonal flow on all dims. Defaults to ``arange(d_a, d)`` (the
+            identity mapping when no flips have happened yet).
+    """
     d = bij.shape[0]
     d_a = d // 2
     k = bij.n_components
     b_idx = np.arange(d_a, d)
     d_b = b_idx.size
 
+    if seed_dim_idx is None:
+        seed_dim_idx = b_idx
+    seed_dim_idx = np.asarray(seed_dim_idx, dtype=np.int64)
+    if seed_dim_idx.size != d_b:
+        raise ValueError(f"seed_dim_idx length {seed_dim_idx.size} != d_b {d_b}")
+
     log_weights = np.zeros((d_b, k), dtype=np.float32)
     means = np.zeros((d_b, k), dtype=np.float32)
     clamped_log_scales = np.zeros((d_b, k), dtype=np.float32)
+    weights = np.zeros((d_b, k), dtype=np.float32)
+    sigmas = np.zeros((d_b, k), dtype=np.float32)
     for j, dim_idx in enumerate(b_idx):
+        seed_i = int(seed_dim_idx[j])
         w, mu, sigma = _fit_gmm_per_dim(
-            y[:, dim_idx], k, _dim_seed(block_idx, int(dim_idx), random_state)
+            y[:, dim_idx], k, _dim_seed(block_idx, seed_i, random_state)
         )
         log_weights[j] = np.log(np.maximum(w, 1e-20))
         means[j] = mu
         clamped_log_scales[j] = np.log(np.maximum(sigma, 1e-12))
+        weights[j] = w
+        sigmas[j] = sigma
 
     # The coupling applies `bound * tanh(raw_log_scales)` to the raw
     # values emitted by the conditioner. Invert that so the clamped
     # output equals the GMM-fit log-scales.
     raw_log_scales = np.asarray(
-        _invert_clamp_log_scale(
-            jnp.asarray(clamped_log_scales), bij.log_scale_bound
-        )
+        _invert_clamp_log_scale(jnp.asarray(clamped_log_scales), bij.log_scale_bound)
     )
 
     bias = _pack_coupling_bias(log_weights, means, raw_log_scales)
@@ -258,10 +322,15 @@ def _init_coupling_from_fits(
         lambda f: (f.weight, f.bias), final, (_zero_kernel(final), jnp.asarray(bias))
     )
     new_mlp = eqx.tree_at(lambda m: m.layers[-1], mlp, new_final)
-    new_coupling = eqx.tree_at(
-        lambda c: c.conditioner, bij._coupling, new_mlp
-    )
-    return eqx.tree_at(lambda b: b._coupling, bij, new_coupling)
+    new_coupling = eqx.tree_at(lambda c: c.conditioner, bij._coupling, new_mlp)
+    new_bij = eqx.tree_at(lambda b: b._coupling, bij, new_coupling)
+
+    # Advance y through a MixtureGaussianCDF-style forward on the b-dims.
+    # This mirrors exactly what `fit_rbig` would do at this step, so the
+    # two warm starts share identical per-block states (and therefore
+    # identical GMM fits at every subsequent block).
+    y_new = _push_forward_b_half_diag(y, b_idx, weights, means, sigmas)
+    return new_bij, y_new
 
 
 def fit_rbig_coupling(
@@ -306,29 +375,53 @@ def fit_rbig_coupling(
         raise ValueError(f"x must be 2-D (n, d); got shape {x_np.shape}")
     n_dims = x_np.shape[-1]
     if n_dims < 2:
-        raise ValueError(
-            "fit_rbig_coupling needs n_dims >= 2 for a non-trivial split."
-        )
+        raise ValueError("fit_rbig_coupling needs n_dims >= 2 for a non-trivial split.")
 
     keys = jr.split(key, int(n_layers))
     bijections = []
     y = x_np
+    d_a = n_dims // 2
     for block_idx in range(int(n_layers)):
         rot = FixedRotation.from_data(y)
         bijections.append(rot)
         y = _push_forward(rot, y)
 
-        bij = MixtureGaussianCDFCoupling(
-            keys[block_idx],
-            shape=(n_dims,),
-            n_components=n_components,
-            nn_width=nn_width,
-            nn_depth=nn_depth,
-            log_scale_bound=log_scale_bound,
-        )
-        bij = _init_coupling_from_fits(bij, y, block_idx, random_state)
-        bijections.append(bij)
-        y = _push_forward(bij, y)
+        # Two couplings with opposing halves (the flowjax equivalent of
+        # the Keras `[coupling(mask=m), coupling(mask=~m)]` pair). Between
+        # them a `Flip` swaps the halves so the second coupling sees the
+        # original untransformed half as its b-half. A trailing `Flip`
+        # restores dim order so the next block's PCA fit sees the
+        # expected orientation.
+        #
+        # `current_perm[i]` = the original-dim (pre-any-flip) index that
+        # currently sits at position `i`. At block start this is
+        # `[0, 1, ..., d-1]`; each Flip reverses it. We use it to seed
+        # each coupling's per-b-dim GMM fit by its *original* dim index,
+        # so the paired couplings reproduce the same per-dim seeding a
+        # diagonal-marginal block would use (mirroring the research-
+        # notebook mask-based code, where `_dim_seed` takes the original
+        # dim index).
+        current_perm = np.arange(n_dims)
+        coup_keys = jr.split(keys[block_idx], 2)
+        for side_idx in range(2):
+            seed_dims = current_perm[d_a:]
+            bij = MixtureGaussianCDFCoupling(
+                coup_keys[side_idx],
+                shape=(n_dims,),
+                n_components=n_components,
+                nn_width=nn_width,
+                nn_depth=nn_depth,
+                log_scale_bound=log_scale_bound,
+            )
+            bij, y = _init_coupling_from_fits(
+                bij, y, block_idx, random_state, seed_dim_idx=seed_dims
+            )
+            bijections.append(bij)
+
+            flip = Flip(shape=(n_dims,))
+            bijections.append(flip)
+            y = _push_forward(flip, y)
+            current_perm = current_perm[::-1].copy()
 
     base_dist = Normal(jnp.zeros(n_dims))
     bijection = Invert(Chain(bijections))
