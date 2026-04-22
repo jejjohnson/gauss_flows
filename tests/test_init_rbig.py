@@ -102,6 +102,15 @@ class TestFitRbigCoupling:
         with pytest.raises(ValueError, match="n_dims >= 2"):
             fit_rbig_coupling(jnp.zeros((10, 1)), key2)
 
+    @pytest.mark.parametrize("n_dims", [3, 5, 7])
+    def test_odd_dims_rejected(self, key2, n_dims):
+        # Odd n_dims breaks the complementary-half assumption behind the
+        # [coupling, Flip, coupling, Flip] block: one dim ends up in both
+        # b-halves and is transformed twice per block, degrading the
+        # warm-start.
+        with pytest.raises(ValueError, match="even n_dims"):
+            fit_rbig_coupling(jnp.zeros((10, n_dims)), key2)
+
     def test_survives_gradient_training(self, key, key2):
         """Gradient training on a fit_rbig_coupling flow must leave it a true
         bijection — sampling must round-trip to within float32 epsilon.

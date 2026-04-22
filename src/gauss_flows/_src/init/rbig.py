@@ -374,6 +374,18 @@ def fit_rbig_coupling(
     n_dims = x_np.shape[-1]
     if n_dims < 2:
         raise ValueError("fit_rbig_coupling needs n_dims >= 2 for a non-trivial split.")
+    if n_dims % 2 != 0:
+        # With odd n_dims the two coupling passes do not cover complementary
+        # halves: `MixtureGaussianCDFCoupling` always uses
+        # `untransformed_dim = n_dims // 2 = floor(n_dims/2)`, so each pass
+        # transforms `ceil(n_dims/2)` coordinates. After the intervening Flip,
+        # one dim ends up in *both* b-halves and gets transformed twice per
+        # block, breaking the zero-kernel ≡ diagonal-RBIG equivalence.
+        raise ValueError(
+            f"fit_rbig_coupling requires even n_dims for the half-swap pair to "
+            f"cover each dim exactly once; got n_dims={n_dims}. Pad the data "
+            f"(e.g. via Augment) or use fit_rbig for odd dimensions."
+        )
 
     keys = jr.split(key, int(n_layers))
     bijections = []
