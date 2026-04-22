@@ -8,6 +8,11 @@ without caring which leaf module a class lives in.
 
 from __future__ import annotations
 
+from gauss_flows._src.transforms._sphere_utils import (
+    expmap_sphere,
+    logmap_sphere,
+    tangent_basis,
+)
 from gauss_flows._src.transforms.bijections import (
     ActNorm,
     ActNorm1D,
@@ -82,4 +87,7 @@ __all__ = [
     "Squeeze",
     "StochasticPermutation",
     "SylvesterFlow",
+    "expmap_sphere",
+    "logmap_sphere",
+    "tangent_basis",
 ]

@@ -10,7 +10,12 @@ from gauss_flows._src.conditioning import (
     time_control_cond_shape,
     unpack_time_control,
 )
-from gauss_flows._src.distributions import GaussianMixture, GaussianPCA
+from gauss_flows._src.distributions import (
+    GaussianMixture,
+    GaussianPCA,
+    UniformOnSphere,
+    VonMisesFisher,
+)
 from gauss_flows._src.flows import (
     SurVAEFlow,
     coupling_gaussianization_flow,
@@ -61,6 +66,9 @@ from gauss_flows._src.transforms import (
     Squeeze,
     StochasticPermutation,
     SylvesterFlow,
+    expmap_sphere,
+    logmap_sphere,
+    tangent_basis,
 )
 from gauss_flows._src.transforms.base import AbstractStochastic, AbstractSurjection
 
@@ -110,15 +118,20 @@ __all__ = [
     "TimeFourier",
     "TimeIdentity",
     "TimeTanh",
+    "UniformOnSphere",
+    "VonMisesFisher",
     "coupling_gaussianization_flow",
     "entropy",
+    "expmap_sphere",
     "fit_gaussianization_flow",
     "gaussianization_flow",
     "iterative_rbig",
     "kl_divergence",
+    "logmap_sphere",
     "mutual_information",
     "negentropy",
     "pack_time_control",
+    "tangent_basis",
     "time_control_cond_shape",
     "total_correlation",
     "unpack_time_control",

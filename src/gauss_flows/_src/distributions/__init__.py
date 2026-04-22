@@ -2,9 +2,12 @@
 
 from gauss_flows._src.distributions.mixture import GaussianMixture
 from gauss_flows._src.distributions.pca import GaussianPCA
+from gauss_flows._src.distributions.sphere import UniformOnSphere, VonMisesFisher
 
 
 __all__ = [
     "GaussianMixture",
     "GaussianPCA",
+    "UniformOnSphere",
+    "VonMisesFisher",
 ]
