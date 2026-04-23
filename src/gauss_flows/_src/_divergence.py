@@ -72,6 +72,8 @@ def hutchinson_divergence(
     estimator = stochtrace.estimator(stochtrace.integrand_trace(), sampler)
 
     def jacobian_matvec(v: Array) -> Array:
+        # Forward-mode autodiff gives J_f(x) @ v in linear complexity, which is
+        # exactly the inner loop Hutchinson needs.
         # v: (dim,) -> J_f(x) @ v: (dim,)
         _, tangent = jax.jvp(
             lambda x_: vector_field(jnp.asarray(t), x_, condition),

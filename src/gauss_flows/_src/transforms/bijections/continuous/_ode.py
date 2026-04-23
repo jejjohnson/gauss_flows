@@ -53,6 +53,8 @@ def solve_augmented_dynamics(
 
 def _initial_step_size(t0: float, t1: float) -> float:
     span = t1 - t0
+    # Start with a modest fraction of the interval so adaptive solvers have a
+    # stable first guess without exposing another FFJORD hyperparameter.
     return span / 64.0
 
 
