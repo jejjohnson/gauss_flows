@@ -26,7 +26,16 @@ class GINCoupling(AbstractBijection):
     ``y_active = x_active · exp(log_scale − mean(log_scale)) + shift``
 
     so the transformed block has unit determinant and the layer returns
-    ``log_det = 0`` exactly.
+    ``log_det = 0`` exactly. We hardcode ``jnp.zeros(())`` rather than
+    returning ``jnp.sum(log_scale_centered)`` because the centering still
+    leaves ~1e-7 float32 drift per layer; compounded across a stack of
+    ``Chain``-ed GIN blocks that drift breaks the volume-preservation that
+    is the whole point of this bijection.
+
+    The active half must have at least two dimensions for centering to
+    actually constrain a scale — a 1-element ``log_scale`` is centred to
+    zero and degenerates to a pure shift. We therefore require
+    ``shape[0] >= 3`` (smallest ``dim`` with ``transformed_dim = 2``).
 
     Reference:
         Sorrenson, Rother, Köthe (2020), *Disentanglement by Nonlinear ICA
@@ -70,6 +79,13 @@ class GINCoupling(AbstractBijection):
     ):
         if len(shape) != 1:
             raise ValueError("GINCoupling only supports 1D inputs.")
+        if shape[0] < 3:
+            raise ValueError(
+                "GINCoupling requires shape[0] >= 3 so the active half has "
+                "at least two dimensions; otherwise centering collapses the "
+                f"log_scale to zero and the layer is a pure shift. Got "
+                f"shape={shape}."
+            )
 
         dim = shape[0]
         transformed_dim = dim - dim // 2
