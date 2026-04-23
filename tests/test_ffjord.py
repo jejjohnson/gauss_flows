@@ -90,6 +90,8 @@ def test_ffjord_exact_logdet_matches_jacobian(key):
     jacobian = jax.jacrev(forward)(x)
     _, logabsdet = jnp.linalg.slogdet(jacobian)
 
+    # ODE integration plus an outer jacobian-of-solver call accumulates more
+    # numerical error than the pure round-trip tests above.
     assert jnp.allclose(log_det, logabsdet, atol=1e-3)
 
 
@@ -125,6 +127,8 @@ def test_ffjord_hutchinson_converges_toward_exact(key):
     _, exact_log_det = exact.transform_and_log_det(x, condition)
     _, approx_log_det = approx.transform_and_log_det(x, condition)
 
+    # Even with 1024 probes, Hutchinson retains Monte Carlo variance, so this
+    # tolerance is intentionally looser than the exact-mode checks above.
     assert jnp.allclose(approx_log_det, exact_log_det, atol=1e-2)
 
 

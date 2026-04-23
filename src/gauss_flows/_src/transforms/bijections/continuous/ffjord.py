@@ -109,7 +109,10 @@ class FFJORD(AbstractBijection):
         if shape[0] < 1:
             raise ValueError(f"shape must have a positive dimension; got {shape}.")
         if control_dim < 0:
-            raise ValueError(f"control_dim must be non-negative; got {control_dim}.")
+            raise ValueError(
+                "control_dim must be non-negative "
+                f"(got {control_dim}); use 0 for unconditional models."
+            )
         if n_hutchinson_samples < 1:
             raise ValueError(
                 f"n_hutchinson_samples must be positive; got {n_hutchinson_samples}."

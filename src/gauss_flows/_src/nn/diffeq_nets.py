@@ -142,6 +142,8 @@ class DiffeqMLP(eqx.Module):
             raise ValueError(f"control_dim must be non-negative; got {control_dim}.")
 
         hidden_sizes = _hidden_sizes(hidden)
+        # unconditional: [ode_time, x] -> (1 + dim)
+        # conditional: [ode_time, x, t_query, c] -> (2 + dim + control_dim)
         input_dim = 1 + in_dim if control_dim == 0 else 2 + in_dim + control_dim
         self.in_dim = in_dim
         self.control_dim = control_dim
@@ -217,6 +219,8 @@ class DiffeqConcat(eqx.Module):
 
         key_mlp, key_time = jr.split(key)
         hidden_sizes = _hidden_sizes(hidden)
+        # unconditional: [time_net(ode_time), x] -> (1 + dim)
+        # conditional: [time_net(ode_time), x, t_query, c] -> (2 + dim + control_dim)
         input_dim = 1 + in_dim if control_dim == 0 else 2 + in_dim + control_dim
         self.in_dim = in_dim
         self.control_dim = control_dim

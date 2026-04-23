@@ -45,6 +45,8 @@ def solve_augmented_dynamics(
         stepsize_controller=_resolve_stepsize_controller(solver, rtol=rtol, atol=atol),
         adjoint=_resolve_adjoint(adjoint),
     )
+    # SaveAt(t1=True) stores a length-1 trajectory per leaf, so [-1] extracts
+    # the terminal state from each of (x_traj, log_det_traj).
     x_final, log_det_final = jax.tree_util.tree_map(lambda leaf: leaf[-1], solution.ys)
     return x_final, log_det_final
 
