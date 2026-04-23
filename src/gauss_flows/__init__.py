@@ -31,8 +31,15 @@ from gauss_flows._src.info_theory import (
     total_correlation,
 )
 from gauss_flows._src.init import fit_rbig, fit_rbig_coupling
-from gauss_flows._src.nn import TimeFourier, TimeIdentity, TimeTanh
+from gauss_flows._src.nn import (
+    DiffeqConcat,
+    DiffeqMLP,
+    TimeFourier,
+    TimeIdentity,
+    TimeTanh,
+)
 from gauss_flows._src.transforms import (
+    FFJORD,
     VAE,
     ActNorm,
     ActNorm1D,
@@ -78,6 +85,7 @@ from gauss_flows._src.transforms.base import AbstractStochastic, AbstractSurject
 
 
 __all__ = [
+    "FFJORD",
     "VAE",
     "AbstractStochastic",
     "AbstractSurjection",
@@ -90,6 +98,8 @@ __all__ = [
     "CircularRationalQuadraticSpline",
     "ContinuousAffineCoupling",
     "DeepSigmoidCoupling",
+    "DiffeqConcat",
+    "DiffeqMLP",
     "FixedRotation",
     "FlowDist",
     "FlowGuide",

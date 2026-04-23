@@ -4,6 +4,7 @@ Subpackages group bijections by technique so the hierarchy mirrors the
 SurVAE taxonomy:
 
 - :mod:`.coupling` — masked-conditioner couplings.
+- :mod:`.continuous` — ODE-defined continuous normalizing flows.
 - :mod:`.elementwise` — pointwise CDF / spline layers that act on each dim.
 - :mod:`.linear` — matrix-shaped layers: rotations, LU, 1×1 conv, conv-exp.
 - :mod:`.normalization` — ActNorm + invertible BatchNorm.
@@ -15,6 +16,7 @@ SurVAE taxonomy:
 from __future__ import annotations
 
 from gauss_flows._src.transforms.bijections.classic import PlanarFlow, SylvesterFlow
+from gauss_flows._src.transforms.bijections.continuous import FFJORD
 from gauss_flows._src.transforms.bijections.coupling import (
     AffineCoupling,
     CircularRQSplineCoupling,
@@ -53,6 +55,7 @@ from gauss_flows._src.transforms.bijections.reshape import Squeeze
 
 
 __all__ = [
+    "FFJORD",
     "ActNorm",
     "ActNorm1D",
     "AffineCoupling",

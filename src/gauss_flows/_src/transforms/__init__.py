@@ -14,6 +14,7 @@ from gauss_flows._src.transforms._sphere_utils import (
     tangent_basis,
 )
 from gauss_flows._src.transforms.bijections import (
+    FFJORD,
     ActNorm,
     ActNorm1D,
     AffineCoupling,
@@ -56,6 +57,7 @@ from gauss_flows._src.transforms.surjections import (
 
 
 __all__ = [
+    "FFJORD",
     "VAE",
     "ActNorm",
     "ActNorm1D",
