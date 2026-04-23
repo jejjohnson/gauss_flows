@@ -102,13 +102,11 @@ def test_matrix_exponential_vmap_matches_loop(key):
         bijection.transform_and_log_det,
         in_axes=(0, 0),
     )(x, condition)
-    loop_y, loop_log_det = zip(
-        *(
-            bijection.transform_and_log_det(x_i, c_i)
-            for x_i, c_i in zip(x, condition, strict=True)
-        ),
-        strict=True,
-    )
+    loop_results = [
+        bijection.transform_and_log_det(x_i, c_i)
+        for x_i, c_i in zip(x, condition, strict=True)
+    ]
+    loop_y, loop_log_det = zip(*loop_results, strict=True)
 
     assert jnp.allclose(batched_y, jnp.stack(loop_y), atol=1e-6)
     assert jnp.allclose(batched_log_det, jnp.stack(loop_log_det), atol=1e-6)
