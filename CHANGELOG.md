@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.5](https://github.com/jejjohnson/gauss_flows/compare/v0.1.4...v0.1.5) (2026-04-23)
+
+
+### Features
+
+* add spherical base distributions and tangent-space geometry utilities ([#74](https://github.com/jejjohnson/gauss_flows/issues/74)) ([8547777](https://github.com/jejjohnson/gauss_flows/commit/8547777b28916fb2a3f2483cfcd57f12c22e7aa6))
+* **bijections:** add FFJORD continuous normalizing flow ([#79](https://github.com/jejjohnson/gauss_flows/issues/79)) ([93df1c0](https://github.com/jejjohnson/gauss_flows/commit/93df1c0b04e7dac61950f981c433212908b96bdc))
+* **bijections:** add MatrixExponential closed-form linear neural flow ([#77](https://github.com/jejjohnson/gauss_flows/issues/77)) ([80b31ea](https://github.com/jejjohnson/gauss_flows/commit/80b31eaf7926fd926d91f9cd683831271dabfdb6))
+* **bijections:** add volume-preserving GIN coupling ([#78](https://github.com/jejjohnson/gauss_flows/issues/78)) ([bfe2ee6](https://github.com/jejjohnson/gauss_flows/commit/bfe2ee6bde0dfafadb5aa799fdde89766d4a5d03))
+* **bijections:** time-gated continuous affine coupling with packed (t, c) conditions ([#73](https://github.com/jejjohnson/gauss_flows/issues/73)) ([4806fd7](https://github.com/jejjohnson/gauss_flows/commit/4806fd7a5b8890058aaa6356f072ea1d7cd96fd2))
+* mixture-cdf coupling + rbig warm-start + notebook suite ([#76](https://github.com/jejjohnson/gauss_flows/issues/76)) ([23a4965](https://github.com/jejjohnson/gauss_flows/commit/23a49653d375802b3a3ba64570ebeedfbc7248b9))
+
 ## [0.1.4](https://github.com/jejjohnson/gauss_flows/compare/v0.1.3...v0.1.4) (2026-04-20)
 
 
