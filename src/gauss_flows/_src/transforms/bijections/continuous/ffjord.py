@@ -33,11 +33,20 @@ class FFJORD(AbstractBijection):
     FFJORD integrates the augmented dynamics
 
     ``dx/dt = f(t, x, condition)``
-    ``dlog|det J|/dt = -tr(∂f/∂x)``
+    ``dlog|det J|/dt = tr(∂f/∂x)``
 
     over a time span ``[t0, t1]`` using ``diffrax``. The trace term is computed
-    either exactly with ``jax.jacfwd`` or stochastically with Hutchinson's
-    identity via :mod:`matfree`.
+    either exactly with ``jax.jacfwd`` (cost ``O(dim)`` per ODE step — use for
+    small ``dim`` or validation) or stochastically with Hutchinson's identity
+    via :mod:`matfree` (cost ``O(n_hutchinson_samples)`` per step).
+
+    Hutchinson probes are **fixed per FFJORD instance**: the ``trace_key`` is
+    stored once at construction and reused across every call to
+    ``transform_and_log_det`` / ``inverse_and_log_det`` *and* across every
+    internal ODE step. This is the "fixed noise" FFJORD variant (Grathwohl
+    et al. 2019, Appendix C) — it makes ``log_det`` a deterministic function
+    of parameters and stabilises gradient optimisation. To draw new probes,
+    construct a new :class:`FFJORD` with a freshly split key.
 
     Args:
         key: PRNG key for the default vector field and Hutchinson probes.

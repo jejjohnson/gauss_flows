@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as jr
 import pytest
+from flowjax.bijections import Chain
 from flowjax.distributions import Normal, Transformed
 
 from gauss_flows import FFJORD, DiffeqConcat, DiffeqMLP, TimeIdentity, pack_time_control
@@ -178,3 +179,57 @@ def test_ffjord_jit_grad_and_distribution_integration(key):
     sample = flow.sample(jr.fold_in(key, 3), condition=condition)
     assert jnp.isfinite(log_prob)
     assert sample.shape == x.shape
+
+
+@pytest.mark.slow
+def test_ffjord_chain_roundtrip_and_logdet_additivity(key):
+    layers = [
+        FFJORD(
+            jr.fold_in(key, i),
+            shape=(2,),
+            vector_field=DiffeqMLP(
+                jr.fold_in(key, 10 + i), in_dim=2, control_dim=1, hidden=(8, 8)
+            ),
+            control_dim=1,
+            divergence_mode="exact",
+            solver="tsit5",
+            adjoint="direct",
+            rtol=1e-6,
+            atol=1e-6,
+        )
+        for i in range(2)
+    ]
+    chain = Chain(layers)
+    x = jr.normal(jr.fold_in(key, 20), (2,))
+    condition = pack_time_control(0.3, jnp.array([0.5]))
+
+    y, log_det_chain = chain.transform_and_log_det(x, condition)
+    x_rec, log_det_inv = chain.inverse_and_log_det(y, condition)
+
+    y_manual = x
+    log_det_manual = jnp.zeros(())
+    for layer in layers:
+        y_manual, layer_log_det = layer.transform_and_log_det(y_manual, condition)
+        log_det_manual = log_det_manual + layer_log_det
+
+    assert jnp.allclose(y, y_manual, atol=1e-4)
+    assert jnp.allclose(log_det_chain, log_det_manual, atol=1e-4)
+    assert jnp.allclose(x_rec, x, atol=1e-3)
+    assert jnp.allclose(log_det_chain + log_det_inv, 0.0, atol=1e-3)
+
+
+def test_ffjord_rejects_invalid_init():
+    with pytest.raises(ValueError, match="1D event shapes"):
+        FFJORD(jr.key(0), shape=(2, 2))
+    with pytest.raises(ValueError, match="positive dimension"):
+        FFJORD(jr.key(0), shape=(0,))
+    with pytest.raises(ValueError, match="control_dim must be non-negative"):
+        FFJORD(jr.key(0), shape=(2,), control_dim=-1)
+    with pytest.raises(ValueError, match="n_hutchinson_samples must be positive"):
+        FFJORD(jr.key(0), shape=(2,), n_hutchinson_samples=0)
+    with pytest.raises(ValueError, match="t_span endpoints must differ"):
+        FFJORD(jr.key(0), shape=(2,), t_span=(0.5, 0.5))
+    with pytest.raises(ValueError, match="divergence_mode must be"):
+        FFJORD(jr.key(0), shape=(2,), divergence_mode="bogus")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="probe_distribution must be"):
+        FFJORD(jr.key(0), shape=(2,), probe_distribution="bogus")  # type: ignore[arg-type]
