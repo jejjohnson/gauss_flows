@@ -103,7 +103,7 @@ class MatrixExponential(AbstractBijection):
         M = jsp_linalg.expm(self.W * t_scalar)
         y = M @ x
         if self.b is not None and self.time_bias_net is not None:
-            y = y + jnp.asarray(self.time_bias_net(t), dtype=x.dtype) * self.b
+            y = y + jnp.asarray(self.time_bias_net(t_scalar), dtype=x.dtype) * self.b
         log_det = t_scalar * jnp.trace(self.W)
         return y, log_det
 
@@ -123,7 +123,7 @@ class MatrixExponential(AbstractBijection):
         t_scalar = t[0]
         y_shifted = y
         if self.b is not None and self.time_bias_net is not None:
-            gate = jnp.asarray(self.time_bias_net(t), dtype=y.dtype)
+            gate = jnp.asarray(self.time_bias_net(t_scalar), dtype=y.dtype)
             y_shifted = y_shifted - gate * self.b
         M_inv = jsp_linalg.expm(-self.W * t_scalar)
         x = M_inv @ y_shifted
