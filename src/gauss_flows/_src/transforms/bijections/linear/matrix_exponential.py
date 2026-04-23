@@ -94,6 +94,17 @@ class MatrixExponential(AbstractBijection):
             TimeIdentity() if use_bias and time_bias_net is None else time_bias_net
         )
 
+    @staticmethod
+    def _unpack_scalar_time(condition: ArrayLike, *, dtype) -> Array:
+        t, _ = unpack_time_control(jnp.asarray(condition, dtype=dtype), control_dim=0)
+        if t.shape != (1,):
+            raise ValueError(
+                "MatrixExponential expects a single-example packed condition "
+                "with shape (1,); got t.shape="
+                f"{t.shape}. For batched conditions wrap the call in jax.vmap."
+            )
+        return t[0]
+
     def transform_and_log_det(
         self,
         x: ArrayLike,
@@ -106,8 +117,7 @@ class MatrixExponential(AbstractBijection):
             )
 
         x = jnp.asarray(x)
-        t, _ = unpack_time_control(jnp.asarray(condition, dtype=x.dtype), control_dim=0)
-        t_scalar = t[0]
+        t_scalar = self._unpack_scalar_time(condition, dtype=x.dtype)
         M = jsp_linalg.expm(self.W * t_scalar)
         y = M @ x
         if self.b is not None and self.time_bias_net is not None:
@@ -127,8 +137,7 @@ class MatrixExponential(AbstractBijection):
             )
 
         y = jnp.asarray(y)
-        t, _ = unpack_time_control(jnp.asarray(condition, dtype=y.dtype), control_dim=0)
-        t_scalar = t[0]
+        t_scalar = self._unpack_scalar_time(condition, dtype=y.dtype)
         y_shifted = y
         if self.b is not None and self.time_bias_net is not None:
             gate = jnp.asarray(self.time_bias_net(t_scalar), dtype=y.dtype)

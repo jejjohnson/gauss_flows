@@ -175,12 +175,34 @@ def test_matrix_exponential_requires_1d_shape():
 
 
 def test_matrix_exponential_requires_condition(key):
+    # flowjax's AbstractBijection decorator normally intercepts condition=None
+    # with "Expected condition to be provided.", but MatrixExponential also
+    # raises its own "requires a packed time condition" internally. Accept
+    # either so this test doesn't regress if flowjax changes its wrapping.
     bij = MatrixExponential(key, shape=(3,))
     x = jnp.zeros((3,))
-    with pytest.raises(ValueError, match="condition to be provided"):
+    match = r"(condition to be provided|packed time condition)"
+    with pytest.raises(ValueError, match=match):
         bij.transform_and_log_det(x)
-    with pytest.raises(ValueError, match="condition to be provided"):
+    with pytest.raises(ValueError, match=match):
         bij.inverse_and_log_det(x)
+
+
+def test_matrix_exponential_rejects_batched_condition(key):
+    bij = MatrixExponential(key, shape=(3,))
+    x = jr.normal(jr.fold_in(key, 1), (3,))
+    # A user who forgets jax.vmap and passes a (B, 1) batched condition
+    # would silently drop the batch dim via t[0]; assert we fail loud instead.
+    # flowjax's AbstractBijection decorator catches this first with
+    # "Expected condition.shape (1,); got (4, 1)"; our internal guard raises
+    # "single-example packed condition" if that decorator is ever bypassed.
+    batched_condition = pack_time_control(jnp.linspace(-0.5, 0.5, 4))
+    assert batched_condition.shape == (4, 1)
+    match = r"(condition\.shape|single-example packed condition)"
+    with pytest.raises(ValueError, match=match):
+        bij.transform_and_log_det(x, batched_condition)
+    with pytest.raises(ValueError, match=match):
+        bij.inverse_and_log_det(x, batched_condition)
 
 
 def test_matrix_exponential_rejects_bias_gate_without_bias():
