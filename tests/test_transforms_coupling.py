@@ -14,6 +14,7 @@ from gauss_flows import (
     AffineCoupling,
     BatchNorm,
     DeepSigmoidCoupling,
+    GINCoupling,
     RQSplineCoupling,
 )
 
@@ -96,6 +97,114 @@ class _ConstantConditioner(eqx.Module):
 
     def __call__(self, _x):
         return self.params
+
+
+def test_gin_coupling_forward_inverse(key):
+    shape = (4,)
+    coupling = GINCoupling(key, shape, nn_width=16, nn_depth=1)
+    x = jr.normal(key, shape)
+    y, log_det_f = coupling.transform_and_log_det(x)
+    x_rec, log_det_i = coupling.inverse_and_log_det(y)
+    assert jnp.allclose(x, x_rec, atol=1e-5)
+    assert jnp.array_equal(log_det_f, jnp.array(0.0, dtype=log_det_f.dtype))
+    assert jnp.array_equal(log_det_i, jnp.array(0.0, dtype=log_det_i.dtype))
+
+
+def test_gin_coupling_log_det_is_exact_zero(key):
+    shape = (6,)
+    coupling = GINCoupling(key, shape, nn_width=16, nn_depth=1)
+    x = jr.normal(key, (8, *shape))
+    _, log_det = jax.vmap(coupling.transform_and_log_det)(x)
+    assert jnp.array_equal(log_det, jnp.zeros((8,), dtype=log_det.dtype))
+
+
+def test_gin_coupling_stack_preserves_zero_log_det(key):
+    shape = (4,)
+    layers = [
+        GINCoupling(jr.fold_in(key, i), shape, nn_width=16, nn_depth=1)
+        for i in range(4)
+    ]
+    chain = Chain(layers)
+    x = jr.normal(jr.fold_in(key, 10), shape)
+    y, log_det = chain.transform_and_log_det(x)
+    x_rec, log_det_inv = chain.inverse_and_log_det(y)
+    assert jnp.allclose(x, x_rec, atol=1e-5)
+    assert jnp.array_equal(log_det, jnp.array(0.0, dtype=log_det.dtype))
+    assert jnp.array_equal(log_det_inv, jnp.array(0.0, dtype=log_det_inv.dtype))
+
+
+def test_gin_coupling_centers_log_scales(key):
+    shape = (3,)
+    coupling = GINCoupling(key, shape, nn_width=8, nn_depth=1)
+    params = jnp.array([1.0, -2.0, 2.0, -1.0])
+    coupling = eqx.tree_at(lambda c: c.nn, coupling, _ConstantConditioner(params))
+
+    x = jnp.array([0.5, 2.0, -3.0])
+    y, log_det = coupling.transform_and_log_det(x)
+
+    expected_log_scale = jnp.array([2.0, -1.0]) - jnp.mean(jnp.array([2.0, -1.0]))
+    expected_active = x[1:] * jnp.exp(expected_log_scale) + jnp.array([1.0, -2.0])
+    expected_y = jnp.concatenate((x[:1], expected_active))
+
+    assert jnp.allclose(y, expected_y)
+    assert jnp.array_equal(log_det, jnp.array(0.0, dtype=log_det.dtype))
+
+
+def test_gin_coupling_log_det_matches_jacobian(key):
+    shape = (8,)
+    coupling = GINCoupling(key, shape, nn_width=16, nn_depth=2)
+    x = jr.normal(jr.fold_in(key, 1), shape)
+
+    def fwd(inp):
+        return coupling.transform_and_log_det(inp)[0]
+
+    jac = jax.jacrev(fwd)(x)
+    _, logabsdet = jnp.linalg.slogdet(jac)
+    assert jnp.allclose(logabsdet, 0.0, atol=1e-6)
+
+
+def test_gin_coupling_jit_and_grad(key):
+    coupling = GINCoupling(key, shape=(6,), nn_width=16, nn_depth=1)
+    x = jr.normal(jr.fold_in(key, 1), (6,))
+
+    eager_y, eager_log_det = coupling.transform_and_log_det(x)
+    jit_y, jit_log_det = eqx.filter_jit(coupling.transform_and_log_det)(x)
+    assert jnp.allclose(jit_y, eager_y, atol=1e-6)
+    assert jnp.array_equal(jit_log_det, eager_log_det)
+
+    def loss_fn(model):
+        y, _ = model.transform_and_log_det(x)
+        return jnp.sum(y**2)
+
+    grads = eqx.filter_grad(loss_fn)(coupling)
+    nn_leaves = [
+        leaf for leaf in jax.tree_util.tree_leaves(grads.nn) if eqx.is_array(leaf)
+    ]
+    assert all(jnp.all(jnp.isfinite(leaf)) for leaf in nn_leaves)
+    assert any(jnp.any(jnp.abs(leaf) > 0) for leaf in nn_leaves)
+
+
+def test_gin_coupling_rejects_small_shape():
+    with pytest.raises(ValueError, match="shape\\[0\\] >= 3"):
+        GINCoupling(jr.key(0), shape=(2,))
+    with pytest.raises(ValueError, match="1D inputs"):
+        GINCoupling(jr.key(0), shape=(4, 4))
+
+
+def test_gin_coupling_log_det_promotes_with_output_dtype(key):
+    # If the caller passes an integer input the MLP promotes the active half
+    # to float; log_det should follow the *output* dtype, not the input dtype,
+    # otherwise it lands as an integer zero that breaks downstream sums.
+    coupling = GINCoupling(key, shape=(4,), nn_width=8, nn_depth=1)
+    x_int = jnp.zeros((4,), dtype=jnp.int32)
+    y, log_det_f = coupling.transform_and_log_det(x_int)
+    assert jnp.issubdtype(y.dtype, jnp.floating)
+    assert log_det_f.dtype == y.dtype
+
+    y_int = jnp.zeros((4,), dtype=jnp.int32)
+    x_rec, log_det_i = coupling.inverse_and_log_det(y_int)
+    assert jnp.issubdtype(x_rec.dtype, jnp.floating)
+    assert log_det_i.dtype == x_rec.dtype
 
 
 def test_deep_sigmoid_coupling_has_curvature(key):
