@@ -67,6 +67,38 @@ class TestFitRbig:
         lp_b = flow_b.log_prob(x[:32])
         assert jnp.allclose(lp_a, lp_b)
 
+    def test_narrow_sigmas_preserved_in_init(self, key):
+        """Components with fitted sigma in (5e-3, 1e-2) must end up with an
+        effective scale close to the fit, not widened to >= 1e-2 by the
+        ``softplus + 5e-3`` floor arithmetic.
+        """
+        import jax
+        import jax.nn
+
+        # Build a narrow mixture so GMM fits small sigmas.
+        n = 4000
+        k1, k2 = jr.split(key)
+        comp = jr.randint(k1, (n, 1), 0, 3)
+        centers = jnp.array([-1.0, 0.0, 1.0])[comp]
+        x = centers + 7e-3 * jr.normal(k2, (n, 1))
+        flow = fit_rbig(x, n_layers=1, n_components=3, random_state=0)
+        # Extract the MixtureGaussianCDF out of the first block.
+        chain = flow.bijection.bijection
+        from gauss_flows import MixtureGaussianCDF
+
+        marg = next(b for b in chain.bijections if isinstance(b, MixtureGaussianCDF))
+        # Effective per-component scales used at forward time.
+        effective_scales = jax.nn.softplus(marg.log_scales) + 5e-3
+        # Data has true sigma=7e-3 so the GMM will fit sigmas near that.
+        # Pre-fix, the `max(sigma - 5e-3, 5e-3)` floor forced every
+        # component to effective scale ~= 1e-2 (ignoring the fit). With
+        # the fix, effective scales should track the fitted sigma to
+        # well within a factor of two.
+        assert float(effective_scales.max()) < 9.5e-3, (
+            f"narrow fits were widened to {effective_scales.max():.4f} "
+            f"instead of being preserved near the fitted sigma (~7e-3)"
+        )
+
 
 class TestFitRbigCoupling:
     def test_output_is_transformed(self, key, key2):

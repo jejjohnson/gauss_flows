@@ -89,7 +89,12 @@ def _fit_marginal(
         log_weights[i] = np.log(np.maximum(w, 1e-20))
         means[i] = mu
         # softplus(raw) + 5e-3 ≈ sigma → raw = inv_softplus(sigma - 5e-3).
-        sigma_target = np.maximum(sigma - 5e-3, 5e-3)
+        # Floor at a tiny positive epsilon (not 5e-3) so components with
+        # fitted sigma in (5e-3, 1e-2) don't get silently widened to
+        # ≥1e-2 — we want sigma_target → 0⁺ to produce the architectural
+        # minimum scale of 5e-3, not a sigma_target of 5e-3 (which gives
+        # an actual scale of ~1e-2).
+        sigma_target = np.maximum(sigma - 5e-3, 1e-6)
         raw_log_scales[i] = np.asarray(inv_softplus(sigma_target))
 
     marg = MixtureGaussianCDF(n_components=n_components, shape=(d,))
