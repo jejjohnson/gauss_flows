@@ -51,10 +51,13 @@ def test_ffjord_roundtrip_and_logdet_cancel(key, control_dim):
         atol=1e-6,
     )
     x = jr.normal(jr.fold_in(key, 2), (3,))
-    control = (
-        None if control_dim == 0 else jr.normal(jr.fold_in(key, 3), (control_dim,))
-    )
-    condition = pack_time_control(0.7, control)
+    if control_dim == 0:
+        # Unconditional FFJORD — no packed condition needed, ode_time is
+        # supplied internally by diffrax.
+        condition = None
+    else:
+        control = jr.normal(jr.fold_in(key, 3), (control_dim,))
+        condition = pack_time_control(0.7, control)
 
     y, log_det_f = bij.transform_and_log_det(x, condition)
     x_rec, log_det_i = bij.inverse_and_log_det(y, condition)
@@ -233,3 +236,25 @@ def test_ffjord_rejects_invalid_init():
         FFJORD(jr.key(0), shape=(2,), divergence_mode="bogus")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="probe_distribution must be"):
         FFJORD(jr.key(0), shape=(2,), probe_distribution="bogus")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="solver must be"):
+        FFJORD(jr.key(0), shape=(2,), solver="bogus")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="adjoint must be"):
+        FFJORD(jr.key(0), shape=(2,), adjoint="bogus")  # type: ignore[arg-type]
+
+
+def test_ffjord_unconditional_allows_none_condition(key):
+    # control_dim=0 is genuinely unconditional: cond_shape is None and
+    # bij.transform_and_log_det(x) works without a packed condition.
+    bij = FFJORD(key, shape=(2,), control_dim=0)
+    assert bij.cond_shape is None
+    # The flowjax call path enforces the contract; we only need to check that
+    # no condition is required. We do NOT run the ODE here (that's slow).
+
+
+def test_ffjord_conditional_still_requires_condition(key):
+    # control_dim>0 keeps the packed-condition contract.
+    bij = FFJORD(key, shape=(2,), control_dim=1)
+    assert bij.cond_shape == (2,)
+    x = jnp.zeros((2,))
+    with pytest.raises(ValueError, match="condition"):
+        bij.transform_and_log_det(x)

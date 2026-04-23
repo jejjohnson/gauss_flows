@@ -26,6 +26,13 @@ _ProbeDistribution = Literal["rademacher", "normal"]
 _SolverName = Literal["dopri5", "tsit5", "heun"]
 _VectorField = Callable[[ArrayLike, ArrayLike, ArrayLike | None], Array]
 
+_SOLVER_NAMES: tuple[_SolverName, ...] = ("dopri5", "tsit5", "heun")
+_ADJOINT_NAMES: tuple[_AdjointName, ...] = (
+    "recursive_checkpoint",
+    "backsolve",
+    "direct",
+)
+
 
 class FFJORD(AbstractBijection):
     """Continuous normalizing flow via a learned ODE.
@@ -66,13 +73,18 @@ class FFJORD(AbstractBijection):
 
     Shape:
         - Input ``x`` / ``y``: ``(dim,)``
-        - Condition: ``(1 + control_dim,)`` packed as ``[t_query, c]``
+        - Condition:
+            - ``control_dim == 0``: ``cond_shape = None`` — no condition
+              accepted (unconditional FFJORD; diffrax supplies the ODE time).
+            - ``control_dim > 0``: ``(1 + control_dim,)`` packed as
+              ``[t_query, c]`` via :func:`gauss_flows.pack_time_control`.
         - Output ``log_det``: scalar ``()``
 
     Example:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import DiffeqMLP, FFJORD, pack_time_control
+        >>> # Conditional FFJORD — packed (t_query, c) condition.
         >>> vf = DiffeqMLP(jr.key(1), in_dim=2, control_dim=1, hidden=(8, 8))
         >>> bij = FFJORD(jr.key(0), shape=(2,), vector_field=vf, control_dim=1)
         >>> x = jnp.array([0.1, -0.2])
@@ -81,10 +93,13 @@ class FFJORD(AbstractBijection):
         >>> x_rec, log_det_inv = bij.inverse_and_log_det(y, cond)
         >>> assert jnp.allclose(x, x_rec, atol=1e-4)
         >>> assert jnp.allclose(log_det + log_det_inv, 0.0, atol=1e-4)
+        >>> # Unconditional FFJORD — no condition required.
+        >>> bij0 = FFJORD(jr.key(2), shape=(2,), control_dim=0)
+        >>> assert bij0.cond_shape is None
     """
 
     shape: tuple[int, ...]
-    cond_shape: tuple[int, ...]
+    cond_shape: tuple[int, ...] | None
     control_dim: int = eqx.field(static=True)
     vector_field: _VectorField
     trace_key: PRNGKeyArray
@@ -138,10 +153,22 @@ class FFJORD(AbstractBijection):
                 "probe_distribution must be 'rademacher' or 'normal'; "
                 f"got {probe_distribution!r}."
             )
+        if solver not in _SOLVER_NAMES:
+            raise ValueError(f"solver must be one of {_SOLVER_NAMES}; got {solver!r}.")
+        if adjoint not in _ADJOINT_NAMES:
+            raise ValueError(
+                f"adjoint must be one of {_ADJOINT_NAMES}; got {adjoint!r}."
+            )
 
         key_vf, key_trace = jr.split(key)
         self.shape = shape
-        self.cond_shape = time_control_cond_shape(control_dim)
+        # control_dim == 0 is a genuinely unconditional FFJORD: the vector
+        # field gets the ODE's own time from diffrax, so there's no "outer"
+        # time to pack. Setting cond_shape=None makes condition=None valid
+        # at the flowjax layer (matching other unconditional bijections).
+        self.cond_shape = (
+            None if control_dim == 0 else time_control_cond_shape(control_dim)
+        )
         self.control_dim = control_dim
         self.vector_field = (
             DiffeqMLP(key_vf, in_dim=shape[0], control_dim=control_dim)
@@ -185,11 +212,14 @@ class FFJORD(AbstractBijection):
         t1: float,
     ) -> tuple[Array, Array]:
         if condition is None:
-            raise ValueError(
-                "FFJORD requires a packed condition. Use pack_time_control(t, control)."
-            )
-
-        condition_array = jnp.asarray(condition, dtype=x0.dtype)
+            if self.control_dim != 0:
+                raise ValueError(
+                    "FFJORD requires a packed condition when control_dim > 0. "
+                    "Use pack_time_control(t, control)."
+                )
+            condition_array: Array | None = None
+        else:
+            condition_array = jnp.asarray(condition, dtype=x0.dtype)
 
         def augmented_vector_field(
             ode_time: Array,
