@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.scipy.stats as jstats
@@ -44,6 +45,63 @@ class MixtureGaussianCDF(AbstractBijection):
         self.log_scales = jnp.zeros((n_dims, n_components))
         self.log_weights = jnp.zeros((n_dims, n_components))
 
+    def _scales(self) -> Array:
+        """σ = softplus(log_scales) + 5e-3 (soft floor for training stability)."""
+        return softplus(self.log_scales) + 5e-3
+
+    @classmethod
+    def from_data(
+        cls,
+        x: ArrayLike,
+        n_components: int = 8,
+    ) -> MixtureGaussianCDF:
+        """Build a marginal layer with means at per-dim quantiles of ``x``.
+
+        The per-dim component means are placed at evenly spaced quantiles
+        of ``x[:, i]``, and the log-scales are set so ``softplus(log_scale)
+        + 5e-3`` matches the inter-quantile spacing × per-dim std — each
+        dim gets its *own* target scale based on its own standard deviation.
+        Weights remain uniform. This gives a meaningful first forward pass
+        without running the full RBIG fit.
+
+        Args:
+            x: Training data of shape ``(n, d)``.
+            n_components: Mixture components ``K``. Defaults to 8.
+
+        Returns:
+            A :class:`MixtureGaussianCDF` with data-adapted means/log-scales.
+        """
+        import numpy as np
+        from paramax.utils import inv_softplus
+
+        x = np.asarray(x)
+        if x.ndim != 2:
+            raise ValueError(f"x must be 2-D (n, d); got shape {x.shape}")
+        n_dims = x.shape[-1]
+        qs = np.linspace(0.5 / n_components, 1.0 - 0.5 / n_components, n_components)
+        means = np.stack(
+            [np.quantile(x[:, i], qs) for i in range(n_dims)], axis=0
+        ).astype("float32")
+        data_std_per_dim = np.asarray(x.std(axis=0), dtype=np.float32)  # (d,)
+        if n_components > 1:
+            target_scale = np.maximum(
+                float(np.mean(np.diff(qs))) * data_std_per_dim, 0.1
+            )
+        else:
+            target_scale = np.maximum(data_std_per_dim, 0.1)
+        # softplus(raw) + 5e-3 ≈ target_scale → raw = inv_softplus(target_scale - 5e-3)
+        raw_log_scale_per_dim = np.asarray(
+            inv_softplus(jnp.asarray(np.maximum(target_scale - 5e-3, 5e-3)))
+        )  # (d,)
+        log_scales = jnp.broadcast_to(
+            jnp.asarray(raw_log_scale_per_dim)[:, None], (n_dims, n_components)
+        )
+
+        obj = cls(n_components=n_components, shape=(n_dims,))
+        obj = eqx.tree_at(lambda m: m.means, obj, jnp.asarray(means))
+        obj = eqx.tree_at(lambda m: m.log_scales, obj, log_scales)
+        return obj
+
     def _gmm_cdf(self, x: Array, means: Array, scales: Array, weights: Array) -> Array:
         """CDF of a 1D Gaussian mixture evaluated at x."""
         cdfs = jstats.norm.cdf(x[:, None], loc=means, scale=scales)
@@ -58,7 +116,7 @@ class MixtureGaussianCDF(AbstractBijection):
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
         x = jnp.asarray(x)
-        scales = softplus(self.log_scales) + 1e-5
+        scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
 
         # GMM CDF -> uniform -> probit (inverse normal CDF)
@@ -77,11 +135,14 @@ class MixtureGaussianCDF(AbstractBijection):
         from gauss_flows._src.utils import bisection_inverse
 
         y = jnp.asarray(y)
-        scales = softplus(self.log_scales) + 1e-5
+        scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
 
-        # Probit -> uniform CDF
-        u = jax.scipy.special.ndtr(y)
+        # Probit -> uniform CDF. Clip so float32 tail saturation
+        # (|y| >~ 5 gives ndtr(y) ∈ {0, 1}) doesn't collapse bisection
+        # to the [-100, 100] bounds, which would otherwise produce
+        # ray/X-pattern artifacts in samples.
+        u = jnp.clip(jax.scipy.special.ndtr(y), 1e-6, 1.0 - 1e-6)
 
         # Invert GMM CDF: find x such that GMM_CDF(x) = u
         def _cdf_i(u_i, means_i, scales_i, weights_i):
@@ -126,6 +187,10 @@ class MixtureLogisticCDF(AbstractBijection):
         self.log_scales = jnp.zeros((n_dims, n_components))
         self.log_weights = jnp.zeros((n_dims, n_components))
 
+    def _scales(self) -> Array:
+        """σ = softplus(log_scales) + 5e-3."""
+        return softplus(self.log_scales) + 5e-3
+
     def _mixture_cdf(
         self, x: Array, means: Array, scales: Array, weights: Array
     ) -> Array:
@@ -143,7 +208,7 @@ class MixtureLogisticCDF(AbstractBijection):
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
         x = jnp.asarray(x)
-        scales = softplus(self.log_scales) + 1e-5
+        scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
 
         u = self._mixture_cdf(x, self.means, scales, weights)
@@ -159,10 +224,10 @@ class MixtureLogisticCDF(AbstractBijection):
         from gauss_flows._src.utils import bisection_inverse
 
         y = jnp.asarray(y)
-        scales = softplus(self.log_scales) + 1e-5
+        scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
 
-        u = jax.scipy.special.ndtr(y)
+        u = jnp.clip(jax.scipy.special.ndtr(y), 1e-6, 1.0 - 1e-6)
 
         def _cdf_i(u_i, means_i, scales_i, weights_i):
             def _fn(xi):

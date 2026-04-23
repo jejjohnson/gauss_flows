@@ -3,6 +3,7 @@
 from typing import ClassVar
 
 import jax.numpy as jnp
+import paramax
 from flowjax.bijections import AbstractBijection
 from jax import Array
 from jaxtyping import ArrayLike
@@ -105,20 +106,33 @@ class FixedRotation(AbstractBijection):
     Useful when the rotation is pre-computed (e.g. via PCA) and should
     not be updated during training.
 
+    The orthogonal matrix is stored internally wrapped in
+    :class:`paramax.NonTrainable` so ``flowjax.train.fit_to_data`` skips it
+    during gradient descent — without the wrapper Adam drifts the rows off
+    the orthogonal manifold and sampling silently collapses while
+    ``log_prob`` keeps reporting plausible numbers. The public ``matrix``
+    attribute transparently returns the unwrapped :class:`jax.Array` so
+    downstream code can still do ``rot.matrix @ x`` unchanged.
+
     Args:
-        matrix: Orthogonal rotation matrix of shape (n_dims, n_dims).
+        matrix: Orthogonal rotation matrix of shape ``(n_dims, n_dims)``.
     """
 
     shape: tuple[int, ...]
     cond_shape: ClassVar[None] = None
-    matrix: Array
+    _matrix: paramax.NonTrainable
 
     def __init__(self, matrix: ArrayLike):
         matrix = jnp.asarray(matrix, dtype=float)
         if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
             raise ValueError("matrix must be a square 2D array.")
         self.shape = (matrix.shape[0],)
-        self.matrix = matrix
+        self._matrix = paramax.non_trainable(matrix)
+
+    @property
+    def matrix(self) -> Array:
+        """The orthogonal rotation matrix (unwrapped from NonTrainable)."""
+        return paramax.unwrap(self._matrix)
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
         y = self.matrix @ jnp.asarray(x)
@@ -127,6 +141,32 @@ class FixedRotation(AbstractBijection):
     def inverse_and_log_det(self, y: ArrayLike, condition=None):
         x = self.matrix.T @ jnp.asarray(y)
         return x, jnp.zeros(())
+
+    @classmethod
+    def from_data(cls, x: ArrayLike) -> "FixedRotation":
+        """Build a PCA rotation from the eigenvectors of ``cov(x)``.
+
+        The rotation is the matrix whose rows are the principal axes of
+        ``x``, in descending-eigenvalue order, so that ``y = rotation(x)``
+        is the decorrelating PCA projection.
+
+        Args:
+            x: Training data of shape ``(n, d)``.
+
+        Returns:
+            A :class:`FixedRotation` whose matrix is the PCA rotation of ``x``.
+        """
+        x = jnp.asarray(x, dtype=float)
+        if x.ndim != 2:
+            raise ValueError(f"x must be 2-D (n, d); got shape {x.shape}")
+        xc = x - jnp.mean(x, axis=0, keepdims=True)
+        cov = (xc.T @ xc) / jnp.maximum(x.shape[0] - 1, 1)
+        eigvals, eigvecs = jnp.linalg.eigh(cov)
+        # eigh returns ascending eigvals; reverse for PCA convention, then
+        # transpose so rows are principal axes (y = matrix @ x).
+        del eigvals
+        matrix = eigvecs[:, ::-1].T
+        return cls(matrix)
 
 
 __all__ = ["FixedRotation", "HouseholderRotation", "OrthogonalRotation"]

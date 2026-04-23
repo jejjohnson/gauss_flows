@@ -44,6 +44,10 @@ plugins:
 nav:
   - Home: index.md
   - Examples:
+      - Gaussianization Flow (2D): notebooks/01_gaussianization_flow_2d.ipynb
+      - Coupling Flow (2D): notebooks/02_coupling_flow_2d.ipynb
+      - RBIG Warm-Start: notebooks/03_rbig_warmstart.ipynb
+      - Zero-Kernel Coupling ≡ Diagonal: notebooks/04_coupling_equivalence.ipynb
       - Toroidal Circular Flow: notebooks/torus_circular_flow.ipynb
   - API Reference: api/reference.md
   - Contributing: contributing.md

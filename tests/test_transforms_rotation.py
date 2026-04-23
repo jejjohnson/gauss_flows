@@ -74,6 +74,34 @@ def test_fixed_rotation_orthogonal_matrix_preserves_volume(key):
     assert jnp.allclose(log_det, 0.0, atol=1e-4)
 
 
+def test_fixed_rotation_is_non_trainable(key):
+    """``FixedRotation.matrix`` must sit in the non-trainable partition, else
+    ``fit_to_data`` will drift the matrix off the orthogonal manifold and
+    ``flow.sample`` will silently produce collapsed output (while log_prob
+    still reports plausible numbers — see `fit_rbig_coupling` regression).
+    """
+    import paramax
+
+    W = jr.normal(key, (4, 4))
+    Q, _ = jnp.linalg.qr(W)
+    rotation = FixedRotation(Q)
+
+    params, _static = eqx.partition(
+        rotation,
+        eqx.is_inexact_array,
+        is_leaf=lambda leaf: isinstance(leaf, paramax.NonTrainable),
+    )
+    trainable_leaves = [
+        leaf
+        for leaf in __import__("jax").tree_util.tree_leaves(params)
+        if eqx.is_inexact_array(leaf)
+    ]
+    assert trainable_leaves == [], (
+        "FixedRotation has trainable inexact-array leaves; "
+        "matrix must be paramax.non_trainable-wrapped."
+    )
+
+
 def _perturb_lu(rotation: LULinearPermute, key) -> LULinearPermute:
     """Helper to give the LU bijection non-trivial parameters for testing."""
     k1, k2, k3 = jr.split(key, 3)

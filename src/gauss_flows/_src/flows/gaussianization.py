@@ -71,9 +71,24 @@ def gaussianization_flow(
             )
 
     def make_layer(key):
+        # Break symmetry at init: a plain MixtureGaussianCDF has means=0 and
+        # a plain HouseholderRotation has deterministic params, so all
+        # mixture components collapse to the same Gaussian and training
+        # sees no gradient to push them apart. The Keras reference
+        # (research_notebook/projects/gaussianization) uses Uniform(-3, 3)
+        # means and RandomNormal Householder vectors for exactly this
+        # reason.
+        marginal_key, rot_key = jr.split(key)
         marginal = MixtureGaussianCDF(n_components=n_components, shape=shape)
+        init_means = jr.uniform(
+            marginal_key, marginal.means.shape, minval=-3.0, maxval=3.0
+        )
+        marginal = eqx.tree_at(lambda m: m.means, marginal, init_means)
+
         if rotation == "householder":
             rot = HouseholderRotation(n_reflections=n_reflections, shape=shape)
+            init_params = jr.normal(rot_key, rot.params.shape)
+            rot = eqx.tree_at(lambda r: r.params, rot, init_params)
         elif rotation == "orthogonal":
             rot = OrthogonalRotation(shape=shape)
         elif rotation == "lu":

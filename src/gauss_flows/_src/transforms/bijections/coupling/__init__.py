@@ -18,6 +18,9 @@ from gauss_flows._src.transforms.bijections.coupling.continuous_affine_coupling 
 from gauss_flows._src.transforms.bijections.coupling.deepsigmoid import (
     DeepSigmoidCoupling,
 )
+from gauss_flows._src.transforms.bijections.coupling.mixture_cdf import (
+    MixtureGaussianCDFCoupling,
+)
 from gauss_flows._src.transforms.bijections.coupling.spline import RQSplineCoupling
 
 
@@ -26,5 +29,6 @@ __all__ = [
     "CircularRQSplineCoupling",
     "ContinuousAffineCoupling",
     "DeepSigmoidCoupling",
+    "MixtureGaussianCDFCoupling",
     "RQSplineCoupling",
 ]

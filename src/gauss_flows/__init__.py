@@ -30,6 +30,7 @@ from gauss_flows._src.info_theory import (
     negentropy,
     total_correlation,
 )
+from gauss_flows._src.init import fit_rbig, fit_rbig_coupling
 from gauss_flows._src.nn import TimeFourier, TimeIdentity, TimeTanh
 from gauss_flows._src.transforms import (
     VAE,
@@ -50,6 +51,7 @@ from gauss_flows._src.transforms import (
     Invertible1x1Conv,
     LULinearPermute,
     MixtureGaussianCDF,
+    MixtureGaussianCDFCoupling,
     MixtureLogisticCDF,
     Orthogonal1x1Conv,
     OrthogonalConvExponential,
@@ -98,6 +100,7 @@ __all__ = [
     "Invertible1x1Conv",
     "LULinearPermute",
     "MixtureGaussianCDF",
+    "MixtureGaussianCDFCoupling",
     "MixtureLogisticCDF",
     "Orthogonal1x1Conv",
     "OrthogonalConvExponential",
@@ -124,6 +127,8 @@ __all__ = [
     "entropy",
     "expmap_sphere",
     "fit_gaussianization_flow",
+    "fit_rbig",
+    "fit_rbig_coupling",
     "gaussianization_flow",
     "iterative_rbig",
     "kl_divergence",
