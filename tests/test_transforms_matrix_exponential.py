@@ -149,3 +149,45 @@ def test_matrix_exponential_chain_roundtrip_and_logdet_additivity(key):
     assert jnp.allclose(log_det_chain, log_det_manual, atol=1e-6)
     assert jnp.allclose(x_rec, x, atol=1e-5)
     assert jnp.allclose(log_det_chain + log_det_inv, 0.0, atol=1e-5)
+
+
+def test_matrix_exponential_chain_vmap_over_times(key):
+    keys = jr.split(key, 3)
+    layers = [MatrixExponential(k, shape=(3,), use_bias=False) for k in keys]
+    chain = Chain(layers)
+    x = jr.normal(jr.fold_in(key, 1), (4, 3))
+    t = jnp.linspace(-0.5, 0.5, 4)
+    condition = pack_time_control(t)
+
+    y, log_det = jax.vmap(chain.transform_and_log_det)(x, condition)
+    x_rec, log_det_inv = jax.vmap(chain.inverse_and_log_det)(y, condition)
+    trace_sum = sum(jnp.trace(layer.W) for layer in layers)
+    expected_log_det = t * trace_sum
+
+    assert jnp.allclose(x_rec, x, atol=1e-5)
+    assert jnp.allclose(log_det, expected_log_det, atol=1e-6)
+    assert jnp.allclose(log_det + log_det_inv, 0.0, atol=1e-5)
+
+
+def test_matrix_exponential_requires_1d_shape():
+    with pytest.raises(ValueError, match="1D"):
+        MatrixExponential(jr.key(0), shape=(3, 3))
+
+
+def test_matrix_exponential_requires_condition(key):
+    bij = MatrixExponential(key, shape=(3,))
+    x = jnp.zeros((3,))
+    with pytest.raises(ValueError, match="condition to be provided"):
+        bij.transform_and_log_det(x)
+    with pytest.raises(ValueError, match="condition to be provided"):
+        bij.inverse_and_log_det(x)
+
+
+def test_matrix_exponential_rejects_bias_gate_without_bias():
+    with pytest.raises(ValueError, match="time_bias_net was provided"):
+        MatrixExponential(
+            jr.key(0),
+            shape=(3,),
+            use_bias=False,
+            time_bias_net=TimeIdentity(),
+        )

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import ClassVar
 
 import jax.numpy as jnp
 import jax.random as jr
@@ -12,7 +11,10 @@ from jax import Array
 from jax.scipy import linalg as jsp_linalg
 from jaxtyping import ArrayLike, PRNGKeyArray
 
-from gauss_flows._src.conditioning import unpack_time_control
+from gauss_flows._src.conditioning import (
+    time_control_cond_shape,
+    unpack_time_control,
+)
 from gauss_flows._src.nn import TimeIdentity
 
 
@@ -60,7 +62,7 @@ class MatrixExponential(AbstractBijection):
     """
 
     shape: tuple[int, ...]
-    cond_shape: ClassVar[tuple[int, ...]] = (1,)
+    cond_shape: tuple[int, ...]
     W: Array
     b: Array | None
     time_bias_net: _TimeGate | None
@@ -76,10 +78,16 @@ class MatrixExponential(AbstractBijection):
     ):
         if len(shape) != 1:
             raise ValueError("MatrixExponential only supports 1D inputs.")
+        if not use_bias and time_bias_net is not None:
+            raise ValueError(
+                "time_bias_net was provided but use_bias=False; the gate would "
+                "be ignored. Pass use_bias=True or leave time_bias_net=None."
+            )
 
         n_dims = shape[0]
-        key_w, key_b = jr.split(key)
+        key_w, key_b = jr.split(key) if use_bias else (key, None)
         self.shape = shape
+        self.cond_shape = time_control_cond_shape(0)
         self.W = jr.normal(key_w, (n_dims, n_dims)) * w_init_scale
         self.b = jr.normal(key_b, (n_dims,)) * w_init_scale if use_bias else None
         self.time_bias_net = (
