@@ -14,6 +14,7 @@ from gauss_flows import (
     AffineCoupling,
     BatchNorm,
     DeepSigmoidCoupling,
+    GINCoupling,
     RQSplineCoupling,
 )
 
@@ -96,6 +97,57 @@ class _ConstantConditioner(eqx.Module):
 
     def __call__(self, _x):
         return self.params
+
+
+def test_gin_coupling_forward_inverse(key):
+    shape = (4,)
+    coupling = GINCoupling(key, shape, nn_width=16, nn_depth=1)
+    x = jr.normal(key, shape)
+    y, log_det_f = coupling.transform_and_log_det(x)
+    x_rec, log_det_i = coupling.inverse_and_log_det(y)
+    assert jnp.allclose(x, x_rec, atol=1e-5)
+    assert jnp.array_equal(log_det_f, jnp.array(0.0, dtype=log_det_f.dtype))
+    assert jnp.array_equal(log_det_i, jnp.array(0.0, dtype=log_det_i.dtype))
+
+
+def test_gin_coupling_log_det_is_exact_zero(key):
+    shape = (6,)
+    coupling = GINCoupling(key, shape, nn_width=16, nn_depth=1)
+    x = jr.normal(key, (8, *shape))
+    _, log_det = jax.vmap(coupling.transform_and_log_det)(x)
+    assert jnp.array_equal(log_det, jnp.zeros((8,), dtype=log_det.dtype))
+
+
+def test_gin_coupling_stack_preserves_zero_log_det(key):
+    shape = (4,)
+    layers = [
+        GINCoupling(jr.fold_in(key, i), shape, nn_width=16, nn_depth=1)
+        for i in range(4)
+    ]
+    chain = Chain(layers)
+    x = jr.normal(jr.fold_in(key, 10), shape)
+    y, log_det = chain.transform_and_log_det(x)
+    x_rec, log_det_inv = chain.inverse_and_log_det(y)
+    assert jnp.allclose(x, x_rec, atol=1e-5)
+    assert jnp.array_equal(log_det, jnp.array(0.0, dtype=log_det.dtype))
+    assert jnp.array_equal(log_det_inv, jnp.array(0.0, dtype=log_det_inv.dtype))
+
+
+def test_gin_coupling_centers_log_scales(key):
+    shape = (3,)
+    coupling = GINCoupling(key, shape, nn_width=8, nn_depth=1)
+    params = jnp.array([1.0, -2.0, 2.0, -1.0])
+    coupling = eqx.tree_at(lambda c: c.nn, coupling, _ConstantConditioner(params))
+
+    x = jnp.array([0.5, 2.0, -3.0])
+    y, log_det = coupling.transform_and_log_det(x)
+
+    expected_log_scale = jnp.array([2.0, -1.0]) - jnp.mean(jnp.array([2.0, -1.0]))
+    expected_active = x[1:] * jnp.exp(expected_log_scale) + jnp.array([1.0, -2.0])
+    expected_y = jnp.concatenate((x[:1], expected_active))
+
+    assert jnp.allclose(y, expected_y)
+    assert jnp.array_equal(log_det, jnp.array(0.0, dtype=log_det.dtype))
 
 
 def test_deep_sigmoid_coupling_has_curvature(key):

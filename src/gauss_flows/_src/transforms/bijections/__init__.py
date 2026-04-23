@@ -20,6 +20,7 @@ from gauss_flows._src.transforms.bijections.coupling import (
     CircularRQSplineCoupling,
     ContinuousAffineCoupling,
     DeepSigmoidCoupling,
+    GINCoupling,
     MixtureGaussianCDFCoupling,
     RQSplineCoupling,
 )
@@ -60,6 +61,7 @@ __all__ = [
     "ContinuousAffineCoupling",
     "DeepSigmoidCoupling",
     "FixedRotation",
+    "GINCoupling",
     "HaarWavelet",
     "HistogramCDF",
     "HouseholderRotation",
