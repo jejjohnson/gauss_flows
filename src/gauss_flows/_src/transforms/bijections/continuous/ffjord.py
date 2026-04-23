@@ -219,6 +219,14 @@ class FFJORD(AbstractBijection):
                 )
             condition_array: Array | None = None
         else:
+            if self.control_dim == 0:
+                raise ValueError(
+                    "FFJORD with control_dim=0 is unconditional (cond_shape is "
+                    "None); pass condition=None rather than a packed value. "
+                    "A non-None condition here would be silently dropped by "
+                    "the default DiffeqMLP (or silently consumed by a custom "
+                    "vector field), violating the advertised contract."
+                )
             condition_array = jnp.asarray(condition, dtype=x0.dtype)
 
         def augmented_vector_field(

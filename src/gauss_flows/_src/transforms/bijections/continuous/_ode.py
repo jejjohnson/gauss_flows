@@ -86,8 +86,7 @@ def _resolve_stepsize_controller(
     rtol: float,
     atol: float,
 ):
-    if solver == "heun":
-        return diffrax.ConstantStepSize()
+    del solver  # PIDController works for every solver we expose (incl. Heun).
     return diffrax.PIDController(rtol=rtol, atol=atol)
 
 

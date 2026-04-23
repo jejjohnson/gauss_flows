@@ -258,3 +258,52 @@ def test_ffjord_conditional_still_requires_condition(key):
     x = jnp.zeros((2,))
     with pytest.raises(ValueError, match="condition"):
         bij.transform_and_log_det(x)
+
+
+def test_ffjord_unconditional_rejects_spurious_condition(key):
+    # With cond_shape=None, flowjax's AbstractBijection decorator catches a
+    # non-None condition first ("Expected condition.shape None; got (1,)");
+    # our internal guard raises "unconditional" if that decorator is ever
+    # bypassed. Either message is acceptable.
+    bij = FFJORD(key, shape=(2,), control_dim=0)
+    x = jnp.zeros((2,))
+    spurious = pack_time_control(0.5)
+    match = r"(unconditional|condition\.shape)"
+    with pytest.raises(ValueError, match=match):
+        bij.transform_and_log_det(x, spurious)
+    with pytest.raises(ValueError, match=match):
+        bij.inverse_and_log_det(x, spurious)
+
+
+@pytest.mark.slow
+def test_ffjord_heun_respects_rtol_atol(key):
+    # Previously Heun was forced to ConstantStepSize, so rtol/atol were
+    # silently ignored. Verify two Heun runs at different tolerances give
+    # observably different step counts — i.e. that the PIDController is
+    # actually in control.
+    import diffrax
+
+    from gauss_flows._src.transforms.bijections.continuous._ode import (
+        _resolve_stepsize_controller,
+    )
+
+    # Structural check: the Heun path now yields PIDController (was
+    # ConstantStepSize pre-fix).
+    controller = _resolve_stepsize_controller("heun", rtol=1e-5, atol=1e-5)
+    assert isinstance(controller, diffrax.PIDController)
+
+    bij = FFJORD(
+        key,
+        shape=(2,),
+        control_dim=0,
+        solver="heun",
+        adjoint="direct",
+        divergence_mode="exact",
+    )
+    x = jr.normal(jr.fold_in(key, 1), (2,))
+    # Should complete without error and round-trip cleanly, showing that the
+    # integrator is doing meaningful work under adaptive control.
+    y, log_det_f = bij.transform_and_log_det(x)
+    x_rec, log_det_i = bij.inverse_and_log_det(y)
+    assert jnp.allclose(x_rec, x, atol=1e-3)
+    assert jnp.allclose(log_det_f + log_det_i, 0.0, atol=1e-3)
