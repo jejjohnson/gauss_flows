@@ -365,6 +365,24 @@ wheels = [
 ]
 
 [[package]]
+name = "diffrax"
+version = "0.7.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "equinox" },
+    { name = "jax" },
+    { name = "jaxtyping" },
+    { name = "lineax" },
+    { name = "optimistix" },
+    { name = "typing-extensions" },
+    { name = "wadler-lindig" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5a/ea/a22853377a840d70d1d174d43183f12990c66eecf34ba7e76eec781249d0/diffrax-0.7.2.tar.gz", hash = "sha256:9adc70fe90dba83f7dd839845839b2531a3dd736a3944fe1aa26598507cfb48e", size = 155159, upload-time = "2026-02-18T01:14:04.964Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6c/48/c42f657f3d6b4d9d9674c9bc48e763d024511ea4cc1d6e0c68c7b4380c43/diffrax-0.7.2-py3-none-any.whl", hash = "sha256:1beee2f991cd049962fe3c89da28f933753aa66d80bef857533276c9f23301ed", size = 199673, upload-time = "2026-02-18T01:14:03.38Z" },
+]
+
+[[package]]
 name = "distlib"
 version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -481,6 +499,7 @@ name = "gauss-flows"
 version = "0.1.4"
 source = { editable = "." }
 dependencies = [
+    { name = "diffrax" },
     { name = "einops" },
     { name = "equinox" },
     { name = "flowjax" },
@@ -488,6 +507,7 @@ dependencies = [
     { name = "jax" },
     { name = "jaxlib" },
     { name = "jaxtyping" },
+    { name = "matfree" },
     { name = "numpyro" },
     { name = "optax" },
     { name = "optimistix" },
@@ -522,6 +542,7 @@ typecheck = [
 
 [package.metadata]
 requires-dist = [
+    { name = "diffrax", specifier = "==0.7.2" },
     { name = "einops", specifier = ">=0.8.2" },
     { name = "equinox", specifier = ">=0.10" },
     { name = "flowjax", specifier = ">=0.9" },
@@ -529,6 +550,7 @@ requires-dist = [
     { name = "jax", specifier = ">=0.4.30" },
     { name = "jaxlib", specifier = ">=0.4.30" },
     { name = "jaxtyping" },
+    { name = "matfree", specifier = "==0.5.5" },
     { name = "numpyro", specifier = ">=0.13" },
     { name = "optax", specifier = ">=0.1" },
     { name = "optimistix", specifier = ">=0.0.9" },
@@ -974,6 +996,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/80/d6/2d1b89f6ca4bff1036499b1e29a1d02d282259f3681540e16563f27ebc23/markupsafe-3.0.3-cp313-cp313t-win32.whl", hash = "sha256:69c0b73548bc525c8cb9a251cddf1931d1db4d2258e9599c28c07ef3580ef354", size = 14612, upload-time = "2025-09-27T18:37:02.639Z" },
     { url = "https://files.pythonhosted.org/packages/2b/98/e48a4bfba0a0ffcf9925fe2d69240bfaa19c6f7507b8cd09c70684a53c1e/markupsafe-3.0.3-cp313-cp313t-win_amd64.whl", hash = "sha256:1b4b79e8ebf6b55351f0d91fe80f893b4743f104bff22e90697db1590e47a218", size = 15200, upload-time = "2025-09-27T18:37:03.582Z" },
     { url = "https://files.pythonhosted.org/packages/0e/72/e3cc540f351f316e9ed0f092757459afbc595824ca724cbc5a5d4263713f/markupsafe-3.0.3-cp313-cp313t-win_arm64.whl", hash = "sha256:ad2cf8aa28b8c020ab2fc8287b0f823d0a7d8630784c31e9ee5edea20f406287", size = 13973, upload-time = "2025-09-27T18:37:04.929Z" },
+]
+
+[[package]]
+name = "matfree"
+version = "0.5.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/07/20/7daab1915d09f3618c089db9cf9d645c3da245eeb6236a7281b4759713fe/matfree-0.5.5.tar.gz", hash = "sha256:c478e0ddee7323ec0144fff558459d384a7b9283fd55fd56fc6876bd9701c55b", size = 55624, upload-time = "2025-12-02T09:01:34.401Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/47/57/1d8c13471272eee62970c9e84e4dbf5dba1278d415b8c2923e4247289574/matfree-0.5.5-py3-none-any.whl", hash = "sha256:9ed7c079ec85c902df6d2c36664faa1b50069284a88ff16f8d55f1f4ba2393d0", size = 34657, upload-time = "2025-12-02T09:01:33.119Z" },
 ]
 
 [[package]]
@@ -1507,7 +1538,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess" },
+    { name = "ptyprocess", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
