@@ -191,6 +191,22 @@ def test_gin_coupling_rejects_small_shape():
         GINCoupling(jr.key(0), shape=(4, 4))
 
 
+def test_gin_coupling_log_det_promotes_with_output_dtype(key):
+    # If the caller passes an integer input the MLP promotes the active half
+    # to float; log_det should follow the *output* dtype, not the input dtype,
+    # otherwise it lands as an integer zero that breaks downstream sums.
+    coupling = GINCoupling(key, shape=(4,), nn_width=8, nn_depth=1)
+    x_int = jnp.zeros((4,), dtype=jnp.int32)
+    y, log_det_f = coupling.transform_and_log_det(x_int)
+    assert jnp.issubdtype(y.dtype, jnp.floating)
+    assert log_det_f.dtype == y.dtype
+
+    y_int = jnp.zeros((4,), dtype=jnp.int32)
+    x_rec, log_det_i = coupling.inverse_and_log_det(y_int)
+    assert jnp.issubdtype(x_rec.dtype, jnp.floating)
+    assert log_det_i.dtype == x_rec.dtype
+
+
 def test_deep_sigmoid_coupling_has_curvature(key):
     shape = (2,)
     deep = DeepSigmoidCoupling(key, shape, n_components=3, nn_width=8, nn_depth=1)

@@ -13,7 +13,12 @@ from jaxtyping import ArrayLike, PRNGKeyArray
 
 
 def _center_log_scale(log_scale: Array) -> Array:
-    """Center log-scales so ``Σᵢ log_scaleᵢ = 0`` exactly in the returned tensor."""
+    """Center log-scales so ``Σᵢ log_scaleᵢ = 0`` in exact arithmetic.
+
+    In float32 the centering leaves ~1e-7 drift per layer; :class:`GINCoupling`
+    returns a hardcoded zero ``log_det`` rather than ``jnp.sum`` of this tensor
+    to keep the volume preservation drift-free through stacked layers.
+    """
     return log_scale - jnp.mean(log_scale)
 
 
@@ -116,7 +121,9 @@ class GINCoupling(AbstractBijection):
         shift, log_scale = self._active_params(passive)
         active_y = active * jnp.exp(log_scale) + shift
         y = jnp.concatenate((passive, active_y))
-        log_det = jnp.zeros((), dtype=x.dtype)
+        # Use y.dtype rather than x.dtype: if x is integer, jnp.exp promotes
+        # active_y to float and y.dtype is the right thing to match.
+        log_det = jnp.zeros((), dtype=y.dtype)
         return y, log_det
 
     def inverse_and_log_det(
@@ -131,7 +138,9 @@ class GINCoupling(AbstractBijection):
         shift, log_scale = self._active_params(passive)
         active_x = (active_y - shift) * jnp.exp(-log_scale)
         x = jnp.concatenate((passive, active_x))
-        log_det = jnp.zeros((), dtype=y.dtype)
+        # Mirror the forward-direction fix: base log_det.dtype on the output x,
+        # which is promoted to float by jnp.exp even when the input y is int.
+        log_det = jnp.zeros((), dtype=x.dtype)
         return x, log_det
 
 
