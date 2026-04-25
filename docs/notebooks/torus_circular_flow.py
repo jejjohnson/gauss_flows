@@ -18,14 +18,7 @@
 # Fits a 2D torus with circular spline couplings that keep each angle periodic.
 
 # %%
-# ruff: noqa: I001
-# matplotlib.use must come before pyplot import; ruff isort would otherwise
-# reorder them into a single sorted block.
 from __future__ import annotations
-
-import matplotlib
-
-matplotlib.use("Agg")
 
 import jax.numpy as jnp
 import jax.random as jr
@@ -68,6 +61,7 @@ ax.set_xlabel(r"$\theta$")
 ax.set_ylabel(r"$\phi$")
 style_ax(ax)
 ax.set_title("Samples on the torus (angles in radians)")
+plt.show()
 
 # %% [markdown]
 # ## Build and train a circular coupling flow
@@ -116,6 +110,7 @@ loss_ax.set_ylabel("Negative log-likelihood")
 loss_ax.legend()
 style_ax(loss_ax)
 loss_ax.set_title("Training curve")
+plt.show()
 
 # %% [markdown]
 # ## Sample from the trained circular flow
@@ -139,3 +134,4 @@ for ax in (ax_data, ax_flow):
     ax.set_xlim(-jnp.pi, jnp.pi)
     ax.set_ylim(-jnp.pi, jnp.pi)
 fig.tight_layout()
+plt.show()
