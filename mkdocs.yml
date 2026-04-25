@@ -52,6 +52,7 @@ nav:
       - FFJORD on Two Moons: notebooks/05_ffjord_2d.ipynb
       - Matrix-Exponential Neural Flow: notebooks/06_matrix_exponential_neural_flow.ipynb
       - Global Flow on the Sphere: notebooks/07_global_flow_sphere.ipynb
+      - Latent ODE on Spirals: notebooks/09_latent_ode_spirals.ipynb
   - API Reference: api/reference.md
   - Contributing: contributing.md
 
