@@ -120,6 +120,29 @@ def test_rejects_zero_n_classes(key):
         )
 
 
+def test_rejects_conditional_transform(key):
+    """A coupling with cond_dim makes the contract impossible — reject loudly."""
+    cond_coupling = AffineCoupling(jr.fold_in(key, 1), shape=(4,), cond_dim=3)
+    assert cond_coupling.cond_shape == (3,)
+    with pytest.raises(ValueError, match="only conditions the base"):
+        ClassCondFlow(
+            key,
+            n_classes=3,
+            event_shape=(4,),
+            transforms=[cond_coupling],
+        )
+
+
+def test_rejects_conditional_transform_in_chain(key):
+    """Even one conditional transform in a mostly-unconditional chain trips it."""
+    transforms = [
+        AffineCoupling(jr.fold_in(key, 1), shape=(4,)),  # OK
+        AffineCoupling(jr.fold_in(key, 2), shape=(4,), cond_dim=2),  # NOT OK
+    ]
+    with pytest.raises(ValueError, match=r"transforms\[1\] has cond_shape"):
+        ClassCondFlow(key, n_classes=3, event_shape=(4,), transforms=transforms)
+
+
 def test_chain_with_conditional_coupling_uses_label_as_context(key):
     """A coupling with cond_dim must accept the (scalar int) label as condition."""
     # Note: cond_dim must equal the broadcast condition's flat size. The

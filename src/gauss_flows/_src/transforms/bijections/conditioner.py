@@ -52,7 +52,7 @@ class Conditioner(AbstractBijection):
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import Conditioner, OrthogonalRotation
-        >>> rot = OrthogonalRotation(jr.key(0), shape=(4,))
+        >>> rot = OrthogonalRotation(shape=(4,))
         >>> bij = Conditioner(jr.key(1), inner=rot, cond_shape=(2,))
         >>> x = jr.normal(jr.key(2), (4,))
         >>> y, log_det = bij.transform_and_log_det(x, jnp.array([0.5, -0.5]))
