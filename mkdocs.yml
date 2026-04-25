@@ -49,6 +49,9 @@ nav:
       - RBIG Warm-Start: notebooks/03_rbig_warmstart.ipynb
       - Zero-Kernel Coupling ≡ Diagonal: notebooks/04_coupling_equivalence.ipynb
       - Toroidal Circular Flow: notebooks/torus_circular_flow.ipynb
+      - FFJORD on Two Moons: notebooks/05_ffjord_2d.ipynb
+      - Matrix-Exponential Neural Flow: notebooks/06_matrix_exponential_neural_flow.ipynb
+      - Global Flow on the Sphere: notebooks/07_global_flow_sphere.ipynb
   - API Reference: api/reference.md
   - Contributing: contributing.md
 

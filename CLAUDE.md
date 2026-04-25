@@ -33,7 +33,7 @@ All implementation lives in `src/gauss_flows/`. The public API is re-exported th
 | `src/gauss_flows/_src/info_theory.py` | Layer 2 — information-theoretic measures |
 | `tests/` | Test suite |
 | `docs/` | Documentation (MkDocs) |
-| `docs/notebooks/` | Example notebooks (jupytext percent-format `.py` + executed `.ipynb`) |
+| `docs/notebooks/` | Example notebooks (executed `.ipynb` files only — no jupytext `.py` pairs) |
 
 ### Key dependencies
 
@@ -92,12 +92,11 @@ uv run --group typecheck ty check src/gauss_flows   # Typecheck — package only
 
 ## Documentation Examples
 
-Example notebooks live in `docs/notebooks/` as jupytext percent-format `.py` files. The workflow:
+Example notebooks live in `docs/notebooks/` as **executed `.ipynb` files only** — no jupytext `.py` pairs. The workflow:
 
-1. Write the `.py` source (jupytext percent format)
-2. Execute locally via `jupytext --to notebook --execute foo.py -o foo.ipynb`
-3. Commit both the `.py` source and the executed `.ipynb` (which contains inline figure outputs)
-4. `mkdocs-jupyter` renders the pre-executed `.ipynb` with `execute: false`
+1. Author and execute the `.ipynb` directly (e.g. via Jupyter, or `jupyter nbconvert --to notebook --execute`)
+2. Commit the `.ipynb` with cell outputs intact
+3. `mkdocs-jupyter` renders the pre-executed `.ipynb` with `execute: false`
 
 Figures render inline via `plt.show()` — do **not** use `savefig` or commit separate PNG files. The `.ipynb` cell outputs are the single source of rendered figures.
 
