@@ -11,8 +11,11 @@ from gauss_flows._src.conditioning import (
     unpack_time_control,
 )
 from gauss_flows._src.distributions import (
+    ClassCondDiagGaussian,
+    ConditionalDiagGaussian,
     GaussianMixture,
     GaussianPCA,
+    NumpyroBase,
     UniformOnSphere,
     VonMisesFisher,
 )
@@ -96,6 +99,8 @@ __all__ = [
     "BatchNorm",
     "CircularRQSplineCoupling",
     "CircularRationalQuadraticSpline",
+    "ClassCondDiagGaussian",
+    "ConditionalDiagGaussian",
     "ContinuousAffineCoupling",
     "DeepSigmoidCoupling",
     "DiffeqConcat",
@@ -116,6 +121,7 @@ __all__ = [
     "MixtureGaussianCDF",
     "MixtureGaussianCDFCoupling",
     "MixtureLogisticCDF",
+    "NumpyroBase",
     "Orthogonal1x1Conv",
     "OrthogonalConvExponential",
     "OrthogonalRotation",
