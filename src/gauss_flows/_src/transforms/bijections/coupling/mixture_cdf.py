@@ -137,6 +137,9 @@ class MixtureGaussianCDFCoupling(AbstractBijection):
         shape: Event shape ``(n_dims,)``.
         n_components: Mixture components ``K`` per transformed dim.
             Defaults to 8.
+        cond_dim: If not ``None``, the layer expects a 1-D ``condition`` of
+            shape ``(cond_dim,)`` at call time, concatenated onto the inner
+            MLP's input. Defaults to ``None``.
         nn_width: Hidden layer width of the conditioner MLP. Defaults to 64.
         nn_depth: Depth of the conditioner MLP. Defaults to 2.
         log_scale_bound: Tanh bound applied to per-dim log-scales. Defaults
@@ -149,7 +152,7 @@ class MixtureGaussianCDFCoupling(AbstractBijection):
     """
 
     shape: tuple[int, ...]
-    cond_shape: ClassVar[None] = None
+    cond_shape: tuple[int, ...] | None
     n_components: int = eqx.field(static=True)
     log_scale_bound: float = eqx.field(static=True)
     _coupling: AbstractBijection
@@ -159,18 +162,25 @@ class MixtureGaussianCDFCoupling(AbstractBijection):
         key: PRNGKeyArray,
         shape: tuple[int, ...],
         n_components: int = 8,
+        *,
+        cond_dim: int | None = None,
         nn_width: int = 64,
         nn_depth: int = 2,
         log_scale_bound: float = 5.0,
     ):
         if len(shape) != 1:
             raise ValueError("MixtureGaussianCDFCoupling only supports 1D inputs.")
+        if cond_dim is not None and cond_dim < 1:
+            raise ValueError(
+                f"cond_dim must be a positive int or None; got {cond_dim}."
+            )
         n_dims = shape[0]
         if n_dims < 2:
             raise ValueError(
                 "MixtureGaussianCDFCoupling needs n_dims >= 2 for a non-trivial split."
             )
         self.shape = shape
+        self.cond_shape = None if cond_dim is None else (cond_dim,)
         self.n_components = int(n_components)
         self.log_scale_bound = float(log_scale_bound)
 
@@ -182,14 +192,19 @@ class MixtureGaussianCDFCoupling(AbstractBijection):
             transformer=transformer,
             untransformed_dim=n_dims // 2,
             dim=n_dims,
+            cond_dim=cond_dim,
             nn_width=nn_width,
             nn_depth=nn_depth,
         )
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
+        if self.cond_shape is None:
+            condition = None
         return self._coupling.transform_and_log_det(jnp.asarray(x), condition)
 
     def inverse_and_log_det(self, y: ArrayLike, condition=None):
+        if self.cond_shape is None:
+            condition = None
         return self._coupling.inverse_and_log_det(jnp.asarray(y), condition)
 
 
