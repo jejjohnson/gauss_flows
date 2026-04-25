@@ -83,6 +83,31 @@ class SurVAEFlow(eqx.Module):
         lower_bound: ``True`` iff at least one surjection in the chain
             contributes a lower bound to ``log_prob`` (i.e. has its
             class-level ``lower_bound`` flag set).
+
+    Conditioning model:
+        ``sample`` and ``log_prob`` accept a single optional ``condition``
+        kwarg that is broadcast to **every** layer in the chain *and* to the
+        base distribution. A layer that opts in (``cond_shape is not None``)
+        consumes the condition; a layer that does not (``cond_shape is
+        None``) silently ignores it. So a single global context vector can
+        drive any subset of {base, couplings, FiLM-wrapped layers} —
+        including:
+
+        - **base only**: pair a :class:`ConditionalDiagGaussian` /
+          :class:`ClassCondDiagGaussian` / :class:`NumpyroBase` (factory
+          mode) base with otherwise unconditional transforms.
+        - **transforms only**: pair an unconditional base
+          (:class:`flowjax.distributions.Normal`, …) with one or more
+          coupling layers built with ``cond_dim > 0`` (or any transform
+          wrapped in :class:`Conditioner`).
+        - **both**: a conditional base **and** condition-aware transforms;
+          the same ``condition`` reaches both.
+
+        Inside a coupling layer there are two distinct conditioning streams:
+        the *data-dependent* untransformed half of ``x`` (always present —
+        the whole point of coupling) and the *external* ``condition``
+        (present only when ``cond_dim > 0``). The two are concatenated
+        inside the inner MLP; users do not slice or merge them manually.
     """
 
     base_dist: AbstractDistribution

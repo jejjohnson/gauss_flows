@@ -16,6 +16,7 @@ SurVAE taxonomy:
 from __future__ import annotations
 
 from gauss_flows._src.transforms.bijections.classic import PlanarFlow, SylvesterFlow
+from gauss_flows._src.transforms.bijections.conditioner import Conditioner
 from gauss_flows._src.transforms.bijections.continuous import FFJORD
 from gauss_flows._src.transforms.bijections.coupling import (
     AffineCoupling,
@@ -62,6 +63,7 @@ __all__ = [
     "BatchNorm",
     "CircularRQSplineCoupling",
     "CircularRationalQuadraticSpline",
+    "Conditioner",
     "ContinuousAffineCoupling",
     "DeepSigmoidCoupling",
     "FixedRotation",

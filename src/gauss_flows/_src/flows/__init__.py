@@ -5,6 +5,7 @@
 - :mod:`.rbig` holds the classic iterative-RBIG constructor.
 """
 
+from gauss_flows._src.flows.class_cond_flow import ClassCondFlow
 from gauss_flows._src.flows.gaussianization import (
     coupling_gaussianization_flow,
     gaussianization_flow,
@@ -14,6 +15,7 @@ from gauss_flows._src.flows.survae import SurVAEFlow
 
 
 __all__ = [
+    "ClassCondFlow",
     "SurVAEFlow",
     "coupling_gaussianization_flow",
     "gaussianization_flow",
