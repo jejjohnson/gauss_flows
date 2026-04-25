@@ -20,6 +20,7 @@ from gauss_flows._src.distributions import (
     VonMisesFisher,
 )
 from gauss_flows._src.flows import (
+    ClassCondFlow,
     SurVAEFlow,
     coupling_gaussianization_flow,
     gaussianization_flow,
@@ -51,6 +52,7 @@ from gauss_flows._src.transforms import (
     BatchNorm,
     CircularRationalQuadraticSpline,
     CircularRQSplineCoupling,
+    Conditioner,
     ContinuousAffineCoupling,
     DeepSigmoidCoupling,
     FixedRotation,
@@ -100,7 +102,9 @@ __all__ = [
     "CircularRQSplineCoupling",
     "CircularRationalQuadraticSpline",
     "ClassCondDiagGaussian",
+    "ClassCondFlow",
     "ConditionalDiagGaussian",
+    "Conditioner",
     "ContinuousAffineCoupling",
     "DeepSigmoidCoupling",
     "DiffeqConcat",

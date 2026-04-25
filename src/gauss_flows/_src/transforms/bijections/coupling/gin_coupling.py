@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
-
 import equinox as eqx
 import jax.nn as jnn
 import jax.numpy as jnp
@@ -49,6 +47,10 @@ class GINCoupling(AbstractBijection):
     Args:
         key: JAX random key for conditioner MLP initialisation.
         shape: Event shape ``(n_dims,)``.
+        cond_dim: If not ``None``, the layer expects a 1-D ``condition`` of
+            shape ``(cond_dim,)`` at call time, concatenated onto the inner
+            MLP's input alongside the passive half of ``x``. Defaults to
+            ``None``.
         nn_width: Hidden layer width of the conditioner MLP. Defaults to 64.
         nn_depth: Depth of the conditioner MLP. Defaults to 2.
 
@@ -71,7 +73,7 @@ class GINCoupling(AbstractBijection):
     """
 
     shape: tuple[int, ...]
-    cond_shape: ClassVar[None] = None
+    cond_shape: tuple[int, ...] | None
     untransformed_dim: int = eqx.field(static=True)
     nn: eqx.nn.MLP
 
@@ -79,6 +81,8 @@ class GINCoupling(AbstractBijection):
         self,
         key: PRNGKeyArray,
         shape: tuple[int, ...],
+        *,
+        cond_dim: int | None = None,
         nn_width: int = 64,
         nn_depth: int = 2,
     ):
@@ -91,13 +95,22 @@ class GINCoupling(AbstractBijection):
                 f"log_scale to zero and the layer is a pure shift. Got "
                 f"shape={shape}."
             )
+        if cond_dim is not None and cond_dim < 1:
+            raise ValueError(
+                f"cond_dim must be a positive int or None; got {cond_dim}."
+            )
 
         dim = shape[0]
         transformed_dim = dim - dim // 2
         self.shape = shape
+        self.cond_shape = None if cond_dim is None else (cond_dim,)
         self.untransformed_dim = dim // 2
+        # The MLP consumes [passive_half, condition] when cond_dim is set,
+        # mirroring how flowjax's Coupling threads condition into its inner
+        # MLP for the other coupling layers in this package.
+        in_size = self.untransformed_dim + (cond_dim or 0)
         self.nn = eqx.nn.MLP(
-            in_size=self.untransformed_dim,
+            in_size=in_size,
             out_size=2 * transformed_dim,
             width_size=nn_width,
             depth=nn_depth,
@@ -105,8 +118,16 @@ class GINCoupling(AbstractBijection):
             key=key,
         )
 
-    def _active_params(self, passive: Array) -> tuple[Array, Array]:
-        shift, log_scale = jnp.split(self.nn(passive), 2)
+    def _active_params(
+        self, passive: Array, condition: Array | None
+    ) -> tuple[Array, Array]:
+        if self.cond_shape is None:
+            mlp_in = passive
+        else:
+            mlp_in = jnp.concatenate(
+                [passive, jnp.asarray(condition, dtype=passive.dtype)]
+            )
+        shift, log_scale = jnp.split(self.nn(mlp_in), 2)
         return shift, _center_log_scale(log_scale)
 
     def transform_and_log_det(
@@ -114,11 +135,10 @@ class GINCoupling(AbstractBijection):
         x: ArrayLike,
         condition: ArrayLike | None = None,
     ) -> tuple[Array, Array]:
-        del condition
         x = jnp.asarray(x)
         passive = x[: self.untransformed_dim]
         active = x[self.untransformed_dim :]
-        shift, log_scale = self._active_params(passive)
+        shift, log_scale = self._active_params(passive, condition)
         active_y = active * jnp.exp(log_scale) + shift
         y = jnp.concatenate((passive, active_y))
         # Use y.dtype rather than x.dtype: if x is integer, jnp.exp promotes
@@ -131,11 +151,10 @@ class GINCoupling(AbstractBijection):
         y: ArrayLike,
         condition: ArrayLike | None = None,
     ) -> tuple[Array, Array]:
-        del condition
         y = jnp.asarray(y)
         passive = y[: self.untransformed_dim]
         active_y = y[self.untransformed_dim :]
-        shift, log_scale = self._active_params(passive)
+        shift, log_scale = self._active_params(passive, condition)
         active_x = (active_y - shift) * jnp.exp(-log_scale)
         x = jnp.concatenate((passive, active_x))
         # Mirror the forward-direction fix: base log_det.dtype on the output x,

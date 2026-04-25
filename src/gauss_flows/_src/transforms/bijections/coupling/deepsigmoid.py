@@ -149,6 +149,9 @@ class DeepSigmoidCoupling(AbstractBijection):
         n_components: Number of sigmoid units in the per-dim transformer.
             More components → more capacity, more parameters per dim.
             Defaults to 8.
+        cond_dim: If not ``None``, the layer expects a 1-D ``condition`` of
+            shape ``(cond_dim,)`` at call time, concatenated onto the inner
+            MLP's input. Defaults to ``None``.
         nn_width: Hidden layer width of the conditioner MLP. Defaults to 64.
         nn_depth: Depth of the conditioner MLP. Defaults to 2.
 
@@ -170,7 +173,7 @@ class DeepSigmoidCoupling(AbstractBijection):
     """
 
     shape: tuple[int, ...]
-    cond_shape: ClassVar[None] = None
+    cond_shape: tuple[int, ...] | None
     _coupling: AbstractBijection
 
     def __init__(
@@ -178,13 +181,20 @@ class DeepSigmoidCoupling(AbstractBijection):
         key: PRNGKeyArray,
         shape: tuple[int, ...],
         n_components: int = 8,
+        *,
+        cond_dim: int | None = None,
         nn_width: int = 64,
         nn_depth: int = 2,
     ):
         if len(shape) != 1:
             raise ValueError("DeepSigmoidCoupling only supports 1D inputs.")
+        if cond_dim is not None and cond_dim < 1:
+            raise ValueError(
+                f"cond_dim must be a positive int or None; got {cond_dim}."
+            )
         n_dims = shape[0]
         self.shape = shape
+        self.cond_shape = None if cond_dim is None else (cond_dim,)
 
         transformer = _DeepSigmoidTransformer(n_components=n_components)
         self._coupling = Coupling(
@@ -192,14 +202,19 @@ class DeepSigmoidCoupling(AbstractBijection):
             transformer=transformer,
             untransformed_dim=n_dims // 2,
             dim=n_dims,
+            cond_dim=cond_dim,
             nn_width=nn_width,
             nn_depth=nn_depth,
         )
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
+        if self.cond_shape is None:
+            condition = None
         return self._coupling.transform_and_log_det(jnp.asarray(x), condition)
 
     def inverse_and_log_det(self, y: ArrayLike, condition=None):
+        if self.cond_shape is None:
+            condition = None
         return self._coupling.inverse_and_log_det(jnp.asarray(y), condition)
 
 
