@@ -83,6 +83,45 @@ def test_vmap_conditional_log_prob(key):
     assert jnp.all(jnp.isfinite(log_ps))
 
 
+def test_eqx_module_factory_is_trainable(key):
+    """A parameterized eqx.Module factory must remain visible to filter_grad.
+
+    The wrapper must NOT mark _factory as static — that would freeze any
+    learnable parameters carried by an eqx.Module factory.
+    """
+
+    class TrainableFactory(eqx.Module):
+        loc_param: jax.Array
+
+        def __call__(self, condition):
+            return ndist.Normal(self.loc_param + condition, 1.0).to_event(1)
+
+    fac = TrainableFactory(loc_param=jnp.array([0.5, -0.5, 1.0]))
+    base = NumpyroBase(dist_factory=fac, event_shape=(3,), cond_shape=(3,))
+
+    def loss(model, c, x):
+        return -model.log_prob(x, condition=c)
+
+    grads = eqx.filter_grad(loss)(base, jnp.zeros(3), jnp.zeros(3))
+    assert grads._factory is not None
+    grad_loc = grads._factory.loc_param
+    assert jnp.all(jnp.isfinite(grad_loc))
+    # x = 0, condition = 0, so loc_param sits at the mean; grad of log p wrt
+    # loc_param is loc_param itself for unit-variance Normal.
+    assert jnp.allclose(grad_loc, fac.loc_param, atol=1e-5)
+
+
+def test_expand_to_event_recipe_from_docstring(key):
+    """The docstring's `.expand(shape).to_event(rank)` recipe works."""
+    inner = ndist.Normal(0.0, 1.0).expand((4,)).to_event(1)
+    assert inner.batch_shape == ()
+    assert inner.event_shape == (4,)
+    base = NumpyroBase(dist=inner)
+    assert base.shape == (4,)
+    x = jnp.zeros(4)
+    assert jnp.allclose(base.log_prob(x), inner.log_prob(x), atol=1e-6)
+
+
 def test_rejects_neither_dist_nor_factory():
     with pytest.raises(ValueError, match="exactly one of"):
         NumpyroBase()

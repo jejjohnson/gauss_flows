@@ -1,8 +1,9 @@
 """Wrap an arbitrary numpyro distribution as a flowjax base distribution."""
 
+from __future__ import annotations
+
 from collections.abc import Callable
 
-import equinox as eqx
 import numpyro.distributions as ndist
 from flowjax.distributions import AbstractDistribution
 from jax import Array
@@ -16,8 +17,11 @@ class NumpyroBase(AbstractDistribution):
 
     - **Unconditional** (``dist=...``): a fixed numpyro distribution. The
       ``event_shape`` is read from ``dist.event_shape`` and ``cond_shape`` is
-      ``None``. The numpyro distribution must have ``batch_shape == ()``;
-      use ``.expand(batch_shape)`` upstream if you need broadcasting.
+      ``None``. The numpyro distribution must have ``batch_shape == ()``; if
+      you need to broadcast a scalar dist to a vector event, use
+      ``.expand(shape).to_event(rank)`` so the broadcasted dims are
+      reinterpreted as event dims (otherwise ``batch_shape`` will be
+      non-trivial and this wrapper will reject it).
     - **Conditional** (``dist_factory=...``): a callable
       ``condition -> numpyro.distributions.Distribution`` invoked per call.
       The user must supply ``event_shape`` and ``cond_shape`` because the
@@ -68,7 +72,12 @@ class NumpyroBase(AbstractDistribution):
     shape: tuple[int, ...]
     cond_shape: tuple[int, ...] | None
     _dist: ndist.Distribution | None
-    _factory: Callable[[Array], ndist.Distribution] | None = eqx.field(static=True)
+    # ``_factory`` is a regular (non-static) field so that an ``eqx.Module``
+    # factory carrying learnable parameters remains visible to
+    # ``eqx.filter_grad`` and to optimizers. Plain Python callables (lambdas /
+    # closures) are still accepted — equinox treats them as opaque PyTree
+    # leaves that ``eqx.is_array`` filters skip.
+    _factory: Callable[[Array], ndist.Distribution] | None
 
     def __init__(
         self,

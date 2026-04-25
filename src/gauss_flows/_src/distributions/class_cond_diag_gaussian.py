@@ -1,5 +1,7 @@
 """Class-conditional diagonal Gaussian base distribution."""
 
+from __future__ import annotations
+
 import equinox as eqx
 import jax.numpy as jnp
 import jax.random as jr
@@ -96,6 +98,16 @@ class ClassCondDiagGaussian(AbstractDistribution):
 
     def _resolve_params(self, condition: ArrayLike) -> tuple[Array, Array]:
         idx = jnp.asarray(condition, dtype=jnp.int32)
+        # flowjax's AbstractDistribution decorator does not currently enforce
+        # ``condition.shape == ()`` for scalar cond_shapes, so a non-scalar
+        # condition here would silently gather multiple rows and produce a
+        # batched (loc, log_scale) — breaking the single-event contract.
+        if idx.shape != ():
+            raise ValueError(
+                "ClassCondDiagGaussian expects a scalar integer class label "
+                f"(condition.shape == ()); got shape {idx.shape}. For batched "
+                "labels wrap the call in jax.vmap."
+            )
         log_scale = self.log_scale_raw[idx] * self.logscale_factor
         if self.learn_mean:
             loc = self.loc[idx]

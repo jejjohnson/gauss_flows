@@ -140,6 +140,36 @@ def test_grad_flows_to_per_class_params(key):
     assert jnp.allclose(grads.loc[2], 0.0)
 
 
+def test_rejects_non_scalar_condition_via_internal_api(key):
+    """The internal _resolve_params guard rejects non-scalar conditions.
+
+    The public `log_prob`/`sample` API auto-vmaps over a leading batch
+    dimension (flowjax handles this for us, with correct per-class
+    semantics). The guard is defence-in-depth for any code path that
+    bypasses the public API and calls _resolve_params/_log_prob directly.
+    """
+    base = ClassCondDiagGaussian(key, n_classes=4, event_shape=(3,))
+    with pytest.raises(ValueError, match="scalar integer class label"):
+        base._resolve_params(jnp.array([1, 2]))
+    with pytest.raises(ValueError, match="scalar integer class label"):
+        base._log_prob(jnp.zeros(3), condition=jnp.array([1, 2]))
+
+
+def test_public_api_auto_vmaps_batched_condition(key):
+    """Verify flowjax auto-vmaps over batched conditions correctly."""
+    base = ClassCondDiagGaussian(key, n_classes=4, event_shape=(3,))
+    new_loc = jnp.array([[0.0, 0, 0], [5.0, 0, 0], [-5.0, 0, 0], [0, 0, 0]])
+    base = eqx.tree_at(lambda m: m.loc, base, new_loc)
+    x = jnp.array([5.0, 0.0, 0.0])
+    # Should produce per-class log_probs matching individual scalar calls.
+    out = base.log_prob(x, condition=jnp.array([1, 2]))
+    assert out.shape == (2,)
+    expected_1 = base.log_prob(x, condition=jnp.int32(1))
+    expected_2 = base.log_prob(x, condition=jnp.int32(2))
+    assert jnp.allclose(out[0], expected_1)
+    assert jnp.allclose(out[1], expected_2)
+
+
 def test_rejects_zero_n_classes(key):
     with pytest.raises(ValueError, match="n_classes must be positive"):
         ClassCondDiagGaussian(key, n_classes=0, event_shape=(3,))

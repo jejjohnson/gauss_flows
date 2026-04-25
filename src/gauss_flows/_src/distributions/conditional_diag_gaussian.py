@@ -1,5 +1,7 @@
 """Diagonal Gaussian base distribution amortised by a single context net."""
 
+from __future__ import annotations
+
 from collections.abc import Callable
 
 import equinox as eqx
