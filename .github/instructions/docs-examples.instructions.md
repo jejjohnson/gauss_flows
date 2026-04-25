@@ -1,61 +1,25 @@
 ---
-applyTo: "docs/**/*.py,docs/**/*.md,notebooks/**/*.py"
+applyTo: "docs/notebooks/*.ipynb,docs/**/*.md"
 ---
 
 # Documentation Examples — Standards & Workflow
 
 ## Overview
 
-Example notebooks live in `docs/notebooks/` as **jupytext percent-format `.py` files**. They are the single source of truth for all figures, tables, and timing data shown in the documentation.
+Example notebooks live in `docs/notebooks/` as **executed `.ipynb` files only**. There are no jupytext `.py` pairs — the `.ipynb` is the single source of truth for code, prose, and rendered figures.
 
-**Execution model**: `mkdocs-jupyter` renders notebooks with `execute: false`. Authors write the `.py` source, execute locally to produce an `.ipynb` with inline outputs, and commit **both** the `.py` source and the executed `.ipynb`.
+**Execution model**: `mkdocs-jupyter` renders notebooks with `execute: false`. Authors execute the `.ipynb` locally so cell outputs (including inline figures) are committed alongside the source.
 
 ## Directory Layout
 
 ```
 docs/
 ├── images/
-│   └── {notebook_name}/      # one subdirectory per notebook (for savefig PNGs if used)
+│   └── {notebook_name}/      # one subdirectory per notebook (only if savefig is used)
 ├── notebooks/
-│   ├── demo_foo.py            # jupytext percent-format source
-│   ├── demo_foo.ipynb         # executed notebook (outputs + inline figures)
-│   └── benchmark_bar.py
-└── guide.md                   # markdown page embedding saved images
-```
-
-## Jupytext Header
-
-Every notebook `.py` file must start with this header:
-
-```python
-# ---
-# jupyter:
-#   jupytext:
-#     text_representation:
-#       extension: .py
-#       format_name: percent
-#       format_version: '1.3'
-#       jupytext_version: 1.19.1
-#   kernelspec:
-#     display_name: Python 3
-#     language: python
-#     name: python3
-# ---
-```
-
-## Cell Markers
-
-- **Code cells**: `# %%`
-- **Markdown cells**: `# %% [markdown]` followed by `#`-prefixed lines
-
-```python
-# %% [markdown]
-# # Title
-#
-# Some explanation with LaTeX: $\nabla^2 \psi = f$
-
-# %%
-import jax.numpy as jnp
+│   ├── demo_foo.ipynb        # executed notebook (outputs + inline figures)
+│   └── benchmark_bar.ipynb
+└── guide.md                  # markdown page embedding rendered notebook outputs
 ```
 
 ## Notebook Structure
@@ -69,38 +33,26 @@ Every example notebook should follow this order:
 5. **Figures & tables** (code) — `plt.show()` inline; outputs are embedded in the executed `.ipynb`
 6. **Summary / takeaways** (markdown)
 
-## Paragraph Formatting (important)
-
-Each markdown paragraph must be a **single long line** inside the `.py` source — do NOT wrap prose at 80 chars. Jupytext treats hard line breaks as within-paragraph breaks, and wrapped lines cause weird line-break rendering in the executed notebook.
-
-```python
-# %% [markdown]
-# ## Section heading
-#
-# This is one paragraph written on a single long line. Markdown renderers soft-wrap it to the viewport; do not hard-wrap it in the source or jupytext will insert unwanted breaks.
-#
-# This is a second paragraph. Same rule — one physical line per paragraph.
-```
-
 ## Figures
 
 For inline rendering via `mkdocs-jupyter`, use `plt.show()` and commit the executed `.ipynb` (which contains the cell outputs). Do **not** `savefig` + embed-as-markdown unless there is a specific reason — the `.ipynb` cell outputs are the single source of rendered figures.
 
 ## Matplotlib Backend
 
-Use the non-interactive backend at the top of every notebook to avoid display issues in CI or headless environments:
+In a Jupyter kernel the inline backend is selected automatically when the cell containing `plt.show()` runs, so no explicit backend selection is needed. If you re-execute via `jupyter nbconvert --to notebook --execute` the same default applies. Avoid `matplotlib.use("Agg")` — it is non-interactive and prevents inline figures from being captured into cell outputs.
 
-```python
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+## Re-executing a Notebook
+
 ```
+jupyter nbconvert --to notebook --execute --inplace docs/notebooks/foo.ipynb
+```
+
+Then commit the updated `.ipynb` (cell outputs included).
 
 ## Checklist for New Notebooks
 
-- [ ] Jupytext header present
-- [ ] `matplotlib.use("Agg")` before any `plt` import
-- [ ] Each markdown paragraph is a single long line (no hard-wrap)
-- [ ] Notebook executed locally (`jupytext --to notebook --execute foo.py -o foo.ipynb`)
-- [ ] Both `.py` and `.ipynb` committed
+- [ ] Notebook executed in-place (cell outputs embedded)
+- [ ] At least one `plt.show()` (or trailing-`fig` expression) per plotting cell
+- [ ] No `matplotlib.use("Agg")` calls
+- [ ] No `savefig` and no separate PNG files
 - [ ] Notebook listed in `mkdocs.yml` nav

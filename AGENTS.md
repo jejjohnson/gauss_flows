@@ -156,7 +156,7 @@ This repo uses **MkDocs + Material + mkdocstrings + mkdocs-jupyter** for documen
 
 When writing docstrings, use **Google style** (enforced by `mkdocstrings` config).
 
-Notebooks in `docs/notebooks/` are jupytext-paired `.py` + executed `.ipynb` files. Both are committed; the `.ipynb` carries the inline outputs that `mkdocs-jupyter` renders with `execute: false`.
+Notebooks in `docs/notebooks/` are committed as **executed `.ipynb` files only** — no jupytext `.py` pairs. The `.ipynb` carries the inline outputs that `mkdocs-jupyter` renders with `execute: false`.
 
 ## Commit Messages
 
