@@ -29,10 +29,18 @@ from gauss_flows._src.flows import (
 from gauss_flows._src.inference import FlowDist, FlowGuide, fit_gaussianization_flow
 from gauss_flows._src.info_theory import (
     entropy,
+    entropy_reduction,
+    gaussian_entropy,
+    gaussian_kl_divergence,
+    gaussian_mutual_information,
+    gaussian_total_correlation,
+    information_reduction,
     kl_divergence,
+    kl_divergence_reduction,
     mutual_information,
     negentropy,
     total_correlation,
+    total_correlation_reduction,
 )
 from gauss_flows._src.init import fit_rbig, fit_rbig_coupling
 from gauss_flows._src.nn import (
@@ -149,13 +157,20 @@ __all__ = [
     "VonMisesFisher",
     "coupling_gaussianization_flow",
     "entropy",
+    "entropy_reduction",
     "expmap_sphere",
     "fit_gaussianization_flow",
     "fit_rbig",
     "fit_rbig_coupling",
+    "gaussian_entropy",
+    "gaussian_kl_divergence",
+    "gaussian_mutual_information",
+    "gaussian_total_correlation",
     "gaussianization_flow",
+    "information_reduction",
     "iterative_rbig",
     "kl_divergence",
+    "kl_divergence_reduction",
     "logmap_sphere",
     "mutual_information",
     "negentropy",
@@ -163,5 +178,6 @@ __all__ = [
     "tangent_basis",
     "time_control_cond_shape",
     "total_correlation",
+    "total_correlation_reduction",
     "unpack_time_control",
 ]
