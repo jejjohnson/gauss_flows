@@ -2,6 +2,7 @@
 
 import jax
 import jax.numpy as jnp
+import pytest
 
 import gauss_flows
 
@@ -107,6 +108,7 @@ def test_information_reduction_identical_is_zero(key):
     assert jnp.allclose(red, 0.0, atol=1e-6)
 
 
+@pytest.mark.slow
 def test_total_correlation_reduction_matches_analytical(key):
     """RBIG-way TC of a correlated Gaussian should track the analytical value."""
     cov = (
@@ -129,6 +131,7 @@ def test_total_correlation_reduction_matches_analytical(key):
     assert jnp.abs(tc - tc_true) < 0.2
 
 
+@pytest.mark.slow
 def test_entropy_reduction_returns_finite(key):
     x = jax.random.normal(key, (1000, 3))
     flow = gauss_flows.fit_rbig(x, n_layers=6, n_components=8)
@@ -137,6 +140,7 @@ def test_entropy_reduction_returns_finite(key):
     assert jnp.isfinite(h)
 
 
+@pytest.mark.slow
 def test_kl_divergence_reduction_self_is_small(key):
     x = jax.random.normal(key, (1500, 2))
     flow = gauss_flows.fit_rbig(x, n_layers=6, n_components=8)
@@ -145,6 +149,7 @@ def test_kl_divergence_reduction_self_is_small(key):
     assert jnp.abs(kl) < 0.2
 
 
+@pytest.mark.slow
 def test_kl_divergence_reduction_positive_for_shift(key, key2):
     x = jax.random.normal(key, (1500, 2))
     x_shift = jax.random.normal(key2, (1500, 2)) + jnp.array([1.0, 0.0])

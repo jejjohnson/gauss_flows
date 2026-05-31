@@ -10,8 +10,11 @@ These functions compute various IT measures in three complementary ways:
   :func:`mutual_information`, :func:`kl_divergence`, :func:`negentropy`).
 * **RBIG-way** estimators that accumulate the total-correlation removed by a
   Gaussianization flow (:func:`information_reduction`,
-  :func:`total_correlation_reduction`, :func:`entropy_reduction`).
+  :func:`total_correlation_reduction`, :func:`entropy_reduction`,
+  :func:`kl_divergence_reduction`).
 """
+
+from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
@@ -253,12 +256,12 @@ def gaussian_kl_divergence(
     sigma_p = jnp.asarray(cov_p)
     sigma_q = jnp.asarray(cov_q)
     d = sigma_p.shape[-1]
-    sigma_q_inv = jnp.linalg.inv(sigma_q)
     _sp, logdet_p = jnp.linalg.slogdet(sigma_p)
     _sq, logdet_q = jnp.linalg.slogdet(sigma_q)
     diff = mu_q - mu_p
-    trace_term = jnp.trace(sigma_q_inv @ sigma_p)
-    maha_term = diff @ sigma_q_inv @ diff
+    # Solve instead of forming Sigma_q^-1 (faster, more numerically stable).
+    trace_term = jnp.trace(jnp.linalg.solve(sigma_q, sigma_p))
+    maha_term = diff @ jnp.linalg.solve(sigma_q, diff)
     return 0.5 * (trace_term + maha_term - d + logdet_q - logdet_p)
 
 
@@ -313,6 +316,16 @@ def _marginal_entropy_sum(x: Array, n_bins: int) -> Array:
 
 def _joint_entropy_gaussian(x: Array) -> Array:
     """Gaussian (maximum-entropy) approximation of the joint entropy of ``x``.
+
+    Note:
+        Pairing histogram marginal entropies with a Gaussian joint entropy is
+        only exact when ``x`` is Gaussian (the regime targeted by the
+        Gaussianization flows here, where the latent ``z`` is standard normal).
+        For strongly non-Gaussian marginals the two estimators are inconsistent
+        and the resulting total correlation may be slightly negative even for
+        independent data. This matches RBIG's reference behaviour; pass a fitted
+        Gaussianization flow (so the joint is evaluated on the near-Gaussian
+        latent) for reliable estimates.
 
     Args:
         x: Data of shape ``(n, d)``.
@@ -414,10 +427,13 @@ def _kl_hist_to_normal(v: Array, n_bins: int) -> Array:
     counts, edges = jnp.histogram(v, bins=n_bins)
     total = jnp.sum(counts)
     p = counts / total
-    centers = 0.5 * (edges[:-1] + edges[1:])
-    bin_width = edges[1] - edges[0]
-    # Probability mass of N(0, 1) within each bin (mid-point rule).
-    q = jnp.exp(-0.5 * centers**2) / jnp.sqrt(2.0 * jnp.pi) * bin_width
+    # Reference mass per bin from exact N(0, 1) CDF differences, with the two
+    # outer bins absorbing the tail mass below/above the finite support so that
+    # q integrates to 1 over (-inf, inf) and the result is a proper KL.
+    cdf = jax.scipy.stats.norm.cdf(edges)
+    q = cdf[1:] - cdf[:-1]
+    q = q.at[0].add(cdf[0])
+    q = q.at[-1].add(1.0 - cdf[-1])
     nonzero = p > 0
     safe_p = jnp.where(nonzero, p, 1.0)
     safe_q = jnp.where(q > 0, q, 1.0)
