@@ -54,6 +54,7 @@ nav:
       - Global Flow on the Sphere: notebooks/07_global_flow_sphere.ipynb
       - Conditional Flow Three Ways: notebooks/08_conditional_flow_three_ways.ipynb
       - Latent ODE on Spirals: notebooks/09_latent_ode_spirals.ipynb
+      - Information-Theory Measures: notebooks/10_information_theory.ipynb
   - API Reference: api/reference.md
   - Contributing: contributing.md
 
