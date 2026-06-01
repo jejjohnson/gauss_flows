@@ -130,6 +130,7 @@ def test_rejects_zero_or_negative_cond_dim(key, make):
         make(key, cond_dim=-1)
 
 
+@pytest.mark.integration
 def test_four_layer_affine_stack_is_conditional_end_to_end(key):
     """Acceptance criterion from #28: condition flows through a 4-layer stack."""
     from flowjax.bijections import Chain, Permute

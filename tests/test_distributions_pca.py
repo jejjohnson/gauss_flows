@@ -38,6 +38,7 @@ def test_sample_shape_and_finite(key):
     assert jnp.all(jnp.isfinite(samples))
 
 
+@pytest.mark.slow
 def test_sample_moments_match_covariance(key):
     """Empirical mean/cov from 20k samples match loc and W W^T + sigma^2 I."""
     d, k = 5, 2
@@ -50,6 +51,7 @@ def test_sample_moments_match_covariance(key):
     assert jnp.allclose(empirical_cov, dist.covariance(), atol=0.1)
 
 
+@pytest.mark.integration
 def test_as_base_dist_in_gaussianization_flow(key):
     k_base, k_flow, k_sample = jr.split(key, 3)
     base = GaussianPCA(k_base, event_shape=(4,), latent_dim=2)

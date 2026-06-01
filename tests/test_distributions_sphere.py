@@ -41,6 +41,7 @@ def test_uniform_on_sphere_log_prob_matches_surface_area(key, d):
 
 
 @pytest.mark.parametrize("d", [1, 2, 3, 7])
+@pytest.mark.slow
 def test_uniform_on_sphere_sample_mean_near_zero(key, d):
     dist = UniformOnSphere(d)
     samples = dist.sample(jr.fold_in(key, 100 + d), sample_shape=(20_000,))
@@ -73,6 +74,7 @@ def test_von_mises_fisher_log_prob_matches_scipy(key, d, concentration):
 
 
 @pytest.mark.parametrize("d, concentration", [(1, 1.0), (2, 5.0), (7, 10.0)])
+@pytest.mark.slow
 def test_von_mises_fisher_sample_mean_matches_theory(key, d, concentration):
     mean = _normalize(jr.normal(jr.fold_in(key, d), (d + 1,)))
     dist = VonMisesFisher(mean, concentration)

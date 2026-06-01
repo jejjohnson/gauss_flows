@@ -152,6 +152,7 @@ def _make_bijection_chain(key):
     ]
 
 
+@pytest.mark.integration
 def test_log_prob_matches_flowjax_transformed_for_bijection_only_chain(key):
     base = Normal(jnp.zeros(3))
     bijections = _make_bijection_chain(key)
@@ -165,6 +166,7 @@ def test_log_prob_matches_flowjax_transformed_for_bijection_only_chain(key):
     assert jnp.allclose(actual, expected, atol=1e-5)
 
 
+@pytest.mark.integration
 def test_sample_shape_for_bijection_only_chain(key):
     base = Normal(jnp.zeros(3))
     flow = SurVAEFlow(base, _make_bijection_chain(key))
@@ -230,6 +232,7 @@ def test_log_prob_uses_surjection_forward_direction(key):
     assert jnp.allclose(actual, expected, atol=1e-6)
 
 
+@pytest.mark.integration
 def test_sample_log_prob_round_trip_with_asymmetric_surjection(key):
     """End-to-end: log_prob of a fresh sample equals base.log_prob of the base draw."""
     base = Normal(jnp.zeros(3))
@@ -242,6 +245,7 @@ def test_sample_log_prob_round_trip_with_asymmetric_surjection(key):
     assert jnp.allclose(log_probs, expected, atol=1e-5)
 
 
+@pytest.mark.integration
 def test_sample_log_prob_finite_with_identity_surjection(key):
     base = Normal(jnp.zeros(3))
     flow = SurVAEFlow(base, [Affine(loc=jnp.zeros(3)), _IdentitySurjection()])

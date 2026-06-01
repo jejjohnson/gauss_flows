@@ -297,6 +297,7 @@ def test_simple_maxpool_rejects_bad_shape():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 def test_survaeflow_integration_abs_sort_perm(key):
     """Each new transform must round-trip through SurVAEFlow without NaN."""
     dim = 4
@@ -438,6 +439,7 @@ def test_augment_shape_attribute_and_forward_validation(key):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 def test_survaeflow_log_prob_validates_data_shape(key):
     """Wrong-shape input must raise; correct shape must succeed."""
     base = Normal(jnp.zeros(2))
@@ -455,6 +457,7 @@ def test_survaeflow_log_prob_validates_data_shape(key):
         flow.log_prob(bad, jr.fold_in(key, 3))
 
 
+@pytest.mark.integration
 def test_survaeflow_with_slice_sample_log_prob(key):
     """SurVAEFlow + Slice: sample produces data-shaped output; log_prob is finite."""
     base = Normal(jnp.zeros(2))
@@ -470,6 +473,7 @@ def test_survaeflow_with_slice_sample_log_prob(key):
     assert jnp.all(jnp.isfinite(log_probs))
 
 
+@pytest.mark.integration
 def test_survaeflow_with_augment_sample_log_prob(key):
     """SurVAEFlow + Augment: data shape (2,) → latent (4,) via encoder."""
     base = Normal(jnp.zeros(4))

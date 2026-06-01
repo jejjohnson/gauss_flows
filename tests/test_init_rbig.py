@@ -18,6 +18,7 @@ def _skewed_bimodal_2d(key, n: int = 500):
 
 
 class TestFitRbig:
+    @pytest.mark.integration
     def test_output_is_transformed(self, key):
         x = jr.normal(key, (200, 3))
         flow = fit_rbig(x, n_layers=2, n_components=4)
@@ -25,6 +26,7 @@ class TestFitRbig:
         assert hasattr(flow, "log_prob")
         assert hasattr(flow, "sample")
 
+    @pytest.mark.integration
     def test_log_prob_finite(self, key):
         x = jr.normal(key, (200, 3))
         flow = fit_rbig(x, n_layers=3, n_components=4)
@@ -32,6 +34,8 @@ class TestFitRbig:
         assert lp.shape == (200,)
         assert jnp.all(jnp.isfinite(lp))
 
+    @pytest.mark.slow
+    @pytest.mark.integration
     def test_pushforward_is_standard_normal(self, key):
         x = _skewed_bimodal_2d(key, n=800)
         flow = fit_rbig(x, n_layers=6, n_components=6)
@@ -43,6 +47,8 @@ class TestFitRbig:
         assert np.all(np.abs(z.mean(axis=0)) < 0.2)
         assert np.all(np.abs(z.std(axis=0) - 1.0) < 0.2)
 
+    @pytest.mark.slow
+    @pytest.mark.integration
     def test_beats_identity_baseline(self, key):
         x = _skewed_bimodal_2d(key, n=500)
         flow = fit_rbig(x, n_layers=4, n_components=4)
@@ -59,6 +65,7 @@ class TestFitRbig:
         with pytest.raises(ValueError, match="must be 2-D"):
             fit_rbig(jnp.zeros((3,)))
 
+    @pytest.mark.integration
     def test_reproducible_via_random_state(self, key):
         x = jr.normal(key, (200, 2))
         flow_a = fit_rbig(x, n_layers=2, n_components=4, random_state=7)
@@ -67,6 +74,8 @@ class TestFitRbig:
         lp_b = flow_b.log_prob(x[:32])
         assert jnp.allclose(lp_a, lp_b)
 
+    @pytest.mark.slow
+    @pytest.mark.integration
     def test_narrow_sigmas_preserved_in_init(self, key):
         """Components with fitted sigma in (5e-3, 1e-2) must end up with an
         effective scale close to the fit, not widened to >= 1e-2 by the
@@ -101,12 +110,14 @@ class TestFitRbig:
 
 
 class TestFitRbigCoupling:
+    @pytest.mark.integration
     def test_output_is_transformed(self, key, key2):
         x = jr.normal(key, (200, 4))
         flow = fit_rbig_coupling(x, key2, n_layers=2, n_components=4)
         assert hasattr(flow, "log_prob")
         assert hasattr(flow, "sample")
 
+    @pytest.mark.integration
     def test_log_prob_finite(self, key, key2):
         x = jr.normal(key, (200, 4))
         flow = fit_rbig_coupling(x, key2, n_layers=2, n_components=4)
@@ -114,6 +125,8 @@ class TestFitRbigCoupling:
         assert lp.shape == (200,)
         assert jnp.all(jnp.isfinite(lp))
 
+    @pytest.mark.slow
+    @pytest.mark.integration
     def test_beats_identity_baseline(self, key, key2):
         # Skewed 4D data.
         z = jr.normal(key, (500, 4))
@@ -143,6 +156,8 @@ class TestFitRbigCoupling:
         with pytest.raises(ValueError, match="even n_dims"):
             fit_rbig_coupling(jnp.zeros((10, n_dims)), key2)
 
+    @pytest.mark.slow
+    @pytest.mark.integration
     def test_survives_gradient_training(self, key, key2):
         """Gradient training on a fit_rbig_coupling flow must leave it a true
         bijection — sampling must round-trip to within float32 epsilon.

@@ -3,6 +3,7 @@
 import jax.numpy as jnp
 import numpyro
 import numpyro.distributions as dist
+import pytest
 from numpyro.infer import SVI, Trace_ELBO
 from numpyro.optim import Adam
 
@@ -77,6 +78,8 @@ def test_flow_guide_custom_factory():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_flow_guide_svi_runs(key):
     """SVI with FlowGuide completes without error (smoke test)."""
     obs = jnp.array([1.0])
@@ -87,6 +90,8 @@ def test_flow_guide_svi_runs(key):
     assert jnp.all(jnp.isfinite(result.losses))
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_flow_guide_svi_multidim(key):
     """SVI with FlowGuide works for a multi-dimensional latent space."""
     obs = jnp.zeros(3)
@@ -99,6 +104,8 @@ def test_flow_guide_svi_multidim(key):
     assert jnp.all(jnp.isfinite(result.losses))
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_flow_guide_svi_two_sites(key):
     """SVI with FlowGuide works when the model has two latent sites."""
     obs = jnp.array([1.0])
@@ -109,6 +116,8 @@ def test_flow_guide_svi_two_sites(key):
     assert jnp.all(jnp.isfinite(result.losses))
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_flow_guide_svi_coupling_factory(key):
     """SVI with FlowGuide works when coupling_gaussianization_flow is used."""
     obs = jnp.array([1.0])
@@ -128,6 +137,8 @@ def test_flow_guide_svi_coupling_factory(key):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_flow_guide_sample_posterior_shape(key, key2):
     """sample_posterior returns samples with the expected shape."""
     obs = jnp.array([1.0])
@@ -143,6 +154,8 @@ def test_flow_guide_sample_posterior_shape(key, key2):
     assert jnp.all(jnp.isfinite(posterior_samples["mu"]))
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_flow_guide_sample_posterior_multidim(key, key2):
     """sample_posterior returns correctly shaped samples for vector latents."""
     obs = jnp.zeros(3)
