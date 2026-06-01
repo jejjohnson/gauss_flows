@@ -129,8 +129,8 @@ class HistogramCDF(AbstractBijection):
         """
         try:
             import interpax
-        except ImportError as e:
-            raise ImportError(
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError(
                 "HistogramCDF.fit() requires interpax. "
                 "Install it with: pip install gauss-flows[interp]"
             ) from e
