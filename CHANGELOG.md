@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.6](https://github.com/jejjohnson/gauss_flows/compare/v0.1.5...v0.1.6) (2026-06-01)
+
+
+### Features
+
+* add information-theory measures example and analytical/RBIG-way estimators ([#102](https://github.com/jejjohnson/gauss_flows/issues/102)) ([6d87948](https://github.com/jejjohnson/gauss_flows/commit/6d8794878f0ad1de19c381c7b192085b193fe3c2))
+* **distributions:** conditional base distributions (PR-A of [#28](https://github.com/jejjohnson/gauss_flows/issues/28)) ([#95](https://github.com/jejjohnson/gauss_flows/issues/95)) ([0b458e4](https://github.com/jejjohnson/gauss_flows/commit/0b458e49ad4ee36903ed3f2474a702e9bbce742f))
+* **flows:** conditional containers + Conditioner wrapper (PR-B of [#28](https://github.com/jejjohnson/gauss_flows/issues/28)) ([#97](https://github.com/jejjohnson/gauss_flows/issues/97)) ([1042676](https://github.com/jejjohnson/gauss_flows/commit/104267607c89e8f56e93b293f5e7ea047f7b472a))
+* make interpax an optional dependency ([#103](https://github.com/jejjohnson/gauss_flows/issues/103)) ([66e09f3](https://github.com/jejjohnson/gauss_flows/commit/66e09f3b064f6e1f131610eccddafa03a1a7a51f))
+* **tests:** add slow and integration markers, skip slow in PR CI ([#104](https://github.com/jejjohnson/gauss_flows/issues/104)) ([2fb5688](https://github.com/jejjohnson/gauss_flows/commit/2fb5688fb009616cf928405933cb650e6e8fa10b))
+
 ## [0.1.5](https://github.com/jejjohnson/gauss_flows/compare/v0.1.4...v0.1.5) (2026-04-23)
 
 
