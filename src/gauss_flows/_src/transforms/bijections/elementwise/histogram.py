@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 import equinox as eqx
-import interpax
 import jax
 import jax.numpy as jnp
 from flowjax.bijections import AbstractBijection
 from jax import Array
 from jaxtyping import ArrayLike
+
+
+if TYPE_CHECKING:
+    import interpax
 
 
 class HistogramCDF(AbstractBijection):
@@ -119,7 +122,18 @@ class HistogramCDF(AbstractBijection):
             ``bin_pdf``, ``cdf_edges``, and per-dim forward/inverse
             interpolators populated. Idempotent: refitting with the same
             data yields the same fitted parameters.
+
+        Raises:
+            ImportError: If ``interpax`` is not installed. Install it with
+                ``pip install gauss-flows[interp]``.
         """
+        try:
+            import interpax
+        except ModuleNotFoundError as e:
+            raise ModuleNotFoundError(
+                "HistogramCDF.fit() requires interpax. "
+                "Install it with: pip install gauss-flows[interp]"
+            ) from e
         # values: (n_samples, n_dims)
         values = jnp.asarray(data)
         if values.ndim != 2 or values.shape[1] != self.shape[0]:
