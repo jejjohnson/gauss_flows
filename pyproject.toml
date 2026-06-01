@@ -113,7 +113,8 @@ unresolved-attribute = "ignore"
 testpaths = ["tests"]
 addopts = "-ra --strict-markers --tb=short --cov=src/gauss_flows --cov-report=term-missing --cov-report=xml:coverage.xml"
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "slow: marks tests as slow — training loops, large-sample convergence checks (deselect with '-m \"not slow\"')",
+    "integration: marks end-to-end integration tests — build model → fit → evaluate",
 ]
 
 [tool.coverage.run]

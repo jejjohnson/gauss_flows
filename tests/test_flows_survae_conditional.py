@@ -96,6 +96,7 @@ def _make_numpyro_factory_base(key):
         pytest.param(_make_both, id="both"),
     ],
 )
+@pytest.mark.integration
 def test_survae_conditional_three_configurations(key, make_flow):
     """{base only, coupling only, both} all produce finite log-probs + samples."""
     flow = make_flow(key)
@@ -120,6 +121,7 @@ def test_survae_conditional_three_configurations(key, make_flow):
         pytest.param(_make_both, id="both"),
     ],
 )
+@pytest.mark.integration
 def test_grad_flows_through_conditional_chain(key, make_flow):
     flow = make_flow(key)
     cond = jr.normal(jr.fold_in(key, 100), COND_SHAPE)
@@ -144,6 +146,7 @@ def test_grad_flows_through_conditional_chain(key, make_flow):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 def test_classcond_base_inside_survae(key):
     flow = _make_classcond_base(key)
     label = jnp.int32(2)
@@ -154,6 +157,7 @@ def test_classcond_base_inside_survae(key):
     assert jnp.isfinite(log_p)
 
 
+@pytest.mark.integration
 def test_numpyro_base_inside_survae(key):
     flow = _make_numpyro_factory_base(key)
     cond = jr.normal(jr.fold_in(key, 100), COND_SHAPE)
@@ -169,6 +173,7 @@ def test_numpyro_base_inside_survae(key):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 def test_conditioner_in_mixed_conditional_chain(key):
     """A Conditioner-wrapped rotation composes cleanly with a conditional coupling."""
     rot = OrthogonalRotation(shape=EVENT_SHAPE)
@@ -196,6 +201,7 @@ def test_conditioner_in_mixed_conditional_chain(key):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 def test_four_layer_conditional_affine_stack_in_survae(key):
     from flowjax.bijections import Permute
 

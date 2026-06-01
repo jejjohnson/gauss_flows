@@ -80,6 +80,8 @@ def test_weights_respected(key):
     assert fraction_near_c0 > 0.95
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_fits_known_gmm_via_log_prob_improvement(key):
     """Crude fit test: after a few steps of max-likelihood the model should
     assign strictly higher average log-prob than a poorly-initialised one.
@@ -128,6 +130,7 @@ def test_fits_known_gmm_via_log_prob_improvement(key):
     assert mean_lp_fit > mean_lp_init + 0.1
 
 
+@pytest.mark.integration
 def test_as_base_dist_in_gaussianization_flow(key):
     k_base, k_flow, k_sample = jr.split(key, 3)
     base = GaussianMixture(k_base, n_components=3, event_shape=(3,))

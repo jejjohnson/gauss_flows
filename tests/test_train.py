@@ -22,6 +22,8 @@ def test_fit_gaussianization_flow(key, data_2d):
     assert trained_flow.shape == flow.shape
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_fit_gaussianization_flow_returns_correct_type(key, data_2d):
     from flowjax.distributions import Transformed
 

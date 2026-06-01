@@ -277,6 +277,8 @@ def test_continuous_affine_coupling_vmap_matches_loop(key):
     assert jnp.allclose(batched_log_det, jnp.stack(loop_log_det), atol=1e-6)
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_continuous_affine_coupling_training_sanity(key):
     n_samples = 64
     t = jnp.linspace(0.1, 1.0, n_samples)

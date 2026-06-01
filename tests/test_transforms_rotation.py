@@ -158,6 +158,7 @@ def test_lu_linear_permute_custom_permutation(key):
     assert jnp.allclose(x, x_rec, atol=1e-6)
 
 
+@pytest.mark.integration
 def test_gaussianization_flow_accepts_lu_rotation(key):
     flow = gaussianization_flow(key, n_dims=3, n_layers=2, rotation="lu")
     samples = flow.sample(jr.fold_in(key, 3), (16,))

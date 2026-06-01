@@ -1,6 +1,7 @@
 """Tests for NumPyro compatibility."""
 
 import jax.numpy as jnp
+import pytest
 
 import gauss_flows
 
@@ -19,6 +20,7 @@ def test_flowdist_sample(key):
     assert jnp.all(jnp.isfinite(samples))
 
 
+@pytest.mark.integration
 def test_flowdist_log_prob(key, data_2d):
     flow = gauss_flows.gaussianization_flow(key, n_dims=2, n_layers=2, n_components=4)
     flow_dist = gauss_flows.FlowDist(flow)
