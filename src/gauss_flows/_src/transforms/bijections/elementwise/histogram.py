@@ -11,6 +11,7 @@ from flowjax.bijections import AbstractBijection
 from jax import Array
 from jaxtyping import ArrayLike
 
+
 if TYPE_CHECKING:
     import interpax
 
