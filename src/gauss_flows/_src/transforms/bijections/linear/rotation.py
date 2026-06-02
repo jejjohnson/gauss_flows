@@ -16,15 +16,41 @@ def _householder(x: Array, v: Array) -> Array:
 
 
 class HouseholderRotation(AbstractBijection):
-    """Rotation via a sequence of Householder reflections.
+    """Orthogonal rotation via a sequence of Householder reflections.
 
-    Stacks multiple Householder reflections to produce a general orthogonal
-    transformation. When n_reflections == dim, this can represent any orthogonal
-    matrix.
+    Composes ``n_reflections`` Householder reflections — each of the form
+    ``x ↦ x − 2·(x·v̂)·v̂`` with unit vector ``v̂`` — to build a general
+    orthogonal map. With ``n_reflections == n_dims`` this can represent any
+    orthogonal matrix. Each reflection is its own inverse, so the inverse
+    simply applies the reflections in reverse order. Being orthogonal, the map
+    is volume-preserving and ``log_det = 0`` exactly.
+
+    Operates on a single ``(n_dims,)`` event; callers vmap over any batch axis.
 
     Args:
         n_reflections: Number of Householder reflections to compose.
-        shape: Shape of the input (n_dims,).
+        shape: Event shape ``(n_dims,)``. Only 1-D events are supported.
+
+    Raises:
+        ValueError: If ``shape`` is not 1-D.
+
+    Shape:
+        - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det = 0
+        - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det = 0
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> from gauss_flows import HouseholderRotation
+        >>> t = HouseholderRotation(n_reflections=2, shape=(3,))
+        >>> x = jnp.array([1.0, 2.0, 3.0])
+        >>> y, log_det = t.transform_and_log_det(x)
+        >>> y.shape
+        (3,)
+        >>> bool(jnp.allclose(log_det, 0.0))
+        True
+        >>> x_rec, _ = t.inverse_and_log_det(y)
+        >>> bool(jnp.allclose(x, x_rec, atol=1e-5))
+        True
     """
 
     shape: tuple[int, ...]
@@ -56,13 +82,37 @@ class HouseholderRotation(AbstractBijection):
 
 
 class OrthogonalRotation(AbstractBijection):
-    """Rotation via a learnable orthogonal matrix using Cayley parameterization.
+    """Learnable orthogonal rotation via the Cayley map.
 
-    Uses the Cayley map to parameterize orthogonal matrices via skew-symmetric
-    matrices: Q = (I - A)(I + A)^{-1}, where A is skew-symmetric.
+    Parameterises an orthogonal matrix ``Q = (I − A)(I + A)⁻¹`` from a
+    skew-symmetric ``A`` (built from the ``n_dims·(n_dims−1)/2`` strictly
+    lower-triangular free parameters, then antisymmetrised). The Cayley
+    transform maps any skew-symmetric ``A`` to a special orthogonal ``Q``,
+    so the map ``y = Q·x`` is volume-preserving with ``log_det = 0`` exactly.
+    Initialised at ``A = 0`` (``Q = I``), i.e. the identity at step 0.
+
+    Operates on a single ``(n_dims,)`` event; callers vmap over any batch axis.
 
     Args:
-        shape: Shape of the input (n_dims,).
+        shape: Event shape ``(n_dims,)``. Only 1-D events are supported.
+
+    Raises:
+        ValueError: If ``shape`` is not 1-D.
+
+    Shape:
+        - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det = 0
+        - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det = 0
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> from gauss_flows import OrthogonalRotation
+        >>> t = OrthogonalRotation(shape=(3,))  # Q = I at init
+        >>> x = jnp.array([1.0, 2.0, 3.0])
+        >>> y, log_det = t.transform_and_log_det(x)
+        >>> bool(jnp.allclose(y, x))  # identity at zero init
+        True
+        >>> bool(jnp.allclose(log_det, 0.0))
+        True
     """
 
     shape: tuple[int, ...]
@@ -101,21 +151,45 @@ class OrthogonalRotation(AbstractBijection):
 
 
 class FixedRotation(AbstractBijection):
-    """A fixed (non-trainable) rotation matrix.
+    """Fixed (non-trainable) orthogonal rotation matrix.
 
-    Useful when the rotation is pre-computed (e.g. via PCA) and should
-    not be updated during training.
+    Applies a pre-computed orthogonal matrix ``y = matrix·x`` (e.g. a PCA
+    rotation from :meth:`from_data`) that is held constant during training.
+    Orthogonality makes the map volume-preserving, so ``log_det = 0`` exactly
+    and the inverse is the transpose.
 
-    The orthogonal matrix is stored internally wrapped in
-    :class:`paramax.NonTrainable` so ``flowjax.train.fit_to_data`` skips it
-    during gradient descent — without the wrapper Adam drifts the rows off
-    the orthogonal manifold and sampling silently collapses while
-    ``log_prob`` keeps reporting plausible numbers. The public ``matrix``
-    attribute transparently returns the unwrapped :class:`jax.Array` so
-    downstream code can still do ``rot.matrix @ x`` unchanged.
+    The matrix is stored wrapped in :class:`paramax.NonTrainable` so
+    ``flowjax.train.fit_to_data`` skips it during gradient descent — without
+    the wrapper Adam drifts the rows off the orthogonal manifold and sampling
+    silently collapses while ``log_prob`` keeps reporting plausible numbers.
+    The public ``matrix`` property transparently returns the unwrapped
+    :class:`jax.Array` so downstream code can still do ``rot.matrix @ x``.
+
+    Operates on a single ``(n_dims,)`` event; callers vmap over any batch axis.
 
     Args:
         matrix: Orthogonal rotation matrix of shape ``(n_dims, n_dims)``.
+
+    Raises:
+        ValueError: If ``matrix`` is not a square 2-D array.
+
+    Shape:
+        - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det = 0
+        - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det = 0
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> from gauss_flows import FixedRotation
+        >>> Q, _ = jnp.linalg.qr(jr.normal(jr.key(0), (3, 3)))
+        >>> t = FixedRotation(Q)
+        >>> x = jnp.array([1.0, 2.0, 3.0])
+        >>> y, log_det = t.transform_and_log_det(x)
+        >>> y.shape
+        (3,)
+        >>> x_rec, _ = t.inverse_and_log_det(y)
+        >>> bool(jnp.allclose(x, x_rec, atol=1e-5))
+        True
     """
 
     shape: tuple[int, ...]

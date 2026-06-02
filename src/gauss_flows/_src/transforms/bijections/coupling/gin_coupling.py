@@ -55,9 +55,9 @@ class GINCoupling(AbstractBijection):
         nn_depth: Depth of the conditioner MLP. Defaults to 2.
 
     Shape:
-        - Input ``x``: ``(n_dims,)``
-        - Output ``y``: ``(n_dims,)``
-        - ``log_det``: scalar ``()``, always exactly zero
+        - transform_and_log_det: (n_dims,) → (n_dims,), scalar log_det (≡ 0)
+        - inverse_and_log_det:   (n_dims,) → (n_dims,), scalar log_det (≡ 0)
+        (with ``cond_dim`` set, also takes a ``condition`` of shape ``(cond_dim,)``)
 
     Example:
         >>> import jax.numpy as jnp
@@ -135,6 +135,17 @@ class GINCoupling(AbstractBijection):
         x: ArrayLike,
         condition: ArrayLike | None = None,
     ) -> tuple[Array, Array]:
+        """Forward map ``x → y`` with volume-preserving ``log_det ≡ 0``.
+
+        Args:
+            x: Single event of shape ``(n_dims,)``.
+            condition: Context of shape ``(cond_dim,)`` when conditional;
+                ``None`` otherwise.
+
+        Returns:
+            Tuple ``(y, log_det)`` with ``y`` of shape ``(n_dims,)`` and a
+            scalar ``log_det`` that is exactly zero.
+        """
         x = jnp.asarray(x)
         passive = x[: self.untransformed_dim]
         active = x[self.untransformed_dim :]
@@ -151,6 +162,17 @@ class GINCoupling(AbstractBijection):
         y: ArrayLike,
         condition: ArrayLike | None = None,
     ) -> tuple[Array, Array]:
+        """Inverse map ``y → x`` with volume-preserving ``log_det ≡ 0``.
+
+        Args:
+            y: Single event of shape ``(n_dims,)``.
+            condition: Context of shape ``(cond_dim,)`` when conditional;
+                ``None`` otherwise.
+
+        Returns:
+            Tuple ``(x, log_det)`` with ``x`` of shape ``(n_dims,)`` and a
+            scalar ``log_det`` that is exactly zero.
+        """
         y = jnp.asarray(y)
         passive = y[: self.untransformed_dim]
         active_y = y[self.untransformed_dim :]

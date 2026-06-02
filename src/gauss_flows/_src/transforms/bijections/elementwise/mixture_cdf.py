@@ -20,14 +20,36 @@ from jaxtyping import ArrayLike
 
 
 class MixtureGaussianCDF(AbstractBijection):
-    """Marginal Gaussianization via a mixture of Gaussians CDF.
+    """Marginal Gaussianization via a mixture-of-Gaussians CDF.
 
-    Applies the CDF of a Gaussian mixture model to each dimension independently,
-    mapping the data to uniform, then applies the Gaussian inverse CDF (probit).
+    Maps each dimension independently through its Gaussian-mixture CDF
+    (→ uniform on ``[0, 1]``) then through the inverse normal CDF (probit),
+    giving Gaussianised marginals. Each dim has its own ``n_components`` means,
+    log-scales, and log-weights; scales use a soft floor
+    ``σ = softplus(log_scale) + 5e−3`` for training stability and weights are a
+    softmax over ``log_weights``. The inverse runs a per-dim bisection solver to
+    invert the (monotone) mixture CDF.
+
+    Use as the marginal block of a Gaussianization / RBIG flow. Construct
+    parameters at zero (uniform components) with ``MixtureGaussianCDF(...)``, or
+    data-adapt the means/scales to per-dim quantiles via :meth:`from_data`.
 
     Args:
-        n_components: Number of mixture components per dimension.
-        shape: Shape of the input (n_dims,).
+        n_components: Number of mixture components ``K`` per dimension.
+        shape: Event shape ``(n_dims,)``. Only 1-D events are supported.
+
+    Shape:
+        - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
+        - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> from gauss_flows import MixtureGaussianCDF
+        >>> t = MixtureGaussianCDF(n_components=4, shape=(3,))
+        >>> x = jnp.zeros(3)
+        >>> y, log_det = t.transform_and_log_det(x)
+        >>> y.shape
+        (3,)
     """
 
     shape: tuple[int, ...]
@@ -163,13 +185,31 @@ class MixtureGaussianCDF(AbstractBijection):
 
 
 class MixtureLogisticCDF(AbstractBijection):
-    """Marginal Gaussianization via a mixture of logistics CDF.
+    """Marginal Gaussianization via a mixture-of-logistics CDF.
 
-    Similar to MixtureGaussianCDF but uses a logistic mixture.
+    Identical in structure to :class:`MixtureGaussianCDF` but each per-dim
+    mixture component is logistic rather than Gaussian: the component CDF is the
+    sigmoid ``σ((x − μ) / s)``. Maps each dimension through its logistic-mixture
+    CDF (→ uniform on ``[0, 1]``) then through the inverse normal CDF (probit).
+    Scales use the same soft floor ``s = softplus(log_scale) + 5e−3`` and
+    weights are a softmax over ``log_weights``; the inverse uses a per-dim
+    bisection solver.
 
     Args:
-        n_components: Number of mixture components per dimension.
-        shape: Shape of the input (n_dims,).
+        n_components: Number of mixture components ``K`` per dimension.
+        shape: Event shape ``(n_dims,)``. Only 1-D events are supported.
+
+    Shape:
+        - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
+        - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> from gauss_flows import MixtureLogisticCDF
+        >>> t = MixtureLogisticCDF(n_components=4, shape=(3,))
+        >>> y, log_det = t.transform_and_log_det(jnp.zeros(3))
+        >>> y.shape
+        (3,)
     """
 
     shape: tuple[int, ...]

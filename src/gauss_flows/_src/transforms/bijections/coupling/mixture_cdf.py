@@ -145,10 +145,27 @@ class MixtureGaussianCDFCoupling(AbstractBijection):
         log_scale_bound: Tanh bound applied to per-dim log-scales. Defaults
             to 5.0 (σ ∈ [exp(-5), exp(5)] ≈ [6.7e-3, 148]).
 
+    Raises:
+        ValueError: If ``shape`` is not 1D, ``cond_dim`` is a non-positive int,
+            or ``n_dims < 2`` (no non-trivial split).
+
     Shape:
-        - Input ``x``: ``(n_dims,)``
-        - Output ``y``: ``(n_dims,)``
-        - ``log_det``: scalar ``()``
+        - transform_and_log_det: (n_dims,) → (n_dims,), scalar log_det
+        - inverse_and_log_det:   (n_dims,) → (n_dims,), scalar log_det
+        (with ``cond_dim`` set, also takes a ``condition`` of shape ``(cond_dim,)``)
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> from gauss_flows import MixtureGaussianCDFCoupling
+        >>> coupling = MixtureGaussianCDFCoupling(jr.key(0), shape=(4,), n_components=4)
+        >>> x = jr.normal(jr.key(1), (4,))
+        >>> y, log_det = coupling.transform_and_log_det(x)
+        >>> y.shape
+        (4,)
+        >>> x_rec, log_det_inv = coupling.inverse_and_log_det(y)
+        >>> bool(jnp.allclose(x, x_rec, atol=1e-4))
+        True
     """
 
     shape: tuple[int, ...]
@@ -197,12 +214,38 @@ class MixtureGaussianCDFCoupling(AbstractBijection):
             nn_depth=nn_depth,
         )
 
-    def transform_and_log_det(self, x: ArrayLike, condition=None):
+    def transform_and_log_det(
+        self, x: ArrayLike, condition: ArrayLike | None = None
+    ) -> tuple[Array, Array]:
+        """Forward map ``x → z`` and its scalar log-determinant.
+
+        Args:
+            x: Single event of shape ``(n_dims,)``.
+            condition: Context of shape ``(cond_dim,)`` when the layer is
+                conditional; ignored (dropped) when ``cond_dim=None``.
+
+        Returns:
+            Tuple ``(z, log_det)`` with ``z`` of shape ``(n_dims,)`` and a
+            scalar ``log_det``.
+        """
         if self.cond_shape is None:
             condition = None
         return self._coupling.transform_and_log_det(jnp.asarray(x), condition)
 
-    def inverse_and_log_det(self, y: ArrayLike, condition=None):
+    def inverse_and_log_det(
+        self, y: ArrayLike, condition: ArrayLike | None = None
+    ) -> tuple[Array, Array]:
+        """Inverse map ``z → x`` and its scalar log-determinant.
+
+        Args:
+            y: Single event of shape ``(n_dims,)``.
+            condition: Context of shape ``(cond_dim,)`` when the layer is
+                conditional; ignored (dropped) when ``cond_dim=None``.
+
+        Returns:
+            Tuple ``(x, log_det)`` with ``x`` of shape ``(n_dims,)`` and a
+            scalar ``log_det``.
+        """
         if self.cond_shape is None:
             condition = None
         return self._coupling.inverse_and_log_det(jnp.asarray(y), condition)

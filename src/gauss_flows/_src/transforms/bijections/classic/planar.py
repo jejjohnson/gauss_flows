@@ -15,21 +15,40 @@ from jaxtyping import ArrayLike, PRNGKeyArray
 
 
 class PlanarFlow(AbstractBijection):
-    """Planar flow bijection (Rezende & Mohamed 2015).
+    """Planar normalizing-flow bijection (Rezende & Mohamed 2015).
 
-    Applies ``y = x + u_hat * tanh(w . x + b)`` where ``u_hat`` is the
-    projection of ``u`` that guarantees ``w . u_hat >= -1`` (the
-    invertibility condition from the original paper).
+    Applies the rank-1 perturbation ``y = x + û · tanh(w · x + b)``, where ``û``
+    is the reparameterisation of the raw vector ``u`` that guarantees
+    ``w · û ≥ −1`` — the invertibility condition from the original paper. The
+    log-abs-det collapses to ``log|1 + (û · w)·(1 − tanh²(w·x + b))|``.
+
+    The forward map has no closed-form inverse, so this layer is generative-only:
+    use it in the sampling / variational-inference direction via
+    :meth:`flowjax.distributions.Transformed.sample_and_log_prob`.
 
     Args:
-        key: JAX random key.
-        shape: Shape of the input ``(n_dims,)``.
+        key: PRNG key used to initialise ``u`` and ``w``.
+        shape: Event shape ``(n_dims,)``. Must be 1-D.
         scale_init: Std of the Gaussian used to initialise ``u`` and ``w``.
+            Defaults to ``0.01``.
 
-    Note:
-        No algebraic inverse; ``inverse_and_log_det`` raises
-        :class:`NotImplementedError`. Use only in the generative
-        (sample / VI) direction.
+    Raises:
+        ValueError: If ``shape`` is not 1-D.
+        NotImplementedError: From ``inverse_and_log_det`` — there is no
+            algebraic inverse.
+
+    Shape:
+        - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
+        - inverse_and_log_det:   not implemented (raises)
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> from gauss_flows import PlanarFlow
+        >>> flow = PlanarFlow(jr.key(0), shape=(3,))
+        >>> y, log_det = flow.transform_and_log_det(jnp.ones((3,)))
+        >>> y.shape, log_det.shape
+        ((3,), ())
     """
 
     shape: tuple[int, ...]

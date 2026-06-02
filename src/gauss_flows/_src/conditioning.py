@@ -37,7 +37,7 @@ def pack_time_control(
 
     Example:
         >>> import jax.numpy as jnp
-        >>> from gauss_flows._src.conditioning import pack_time_control
+        >>> from gauss_flows import pack_time_control
         >>> pack_time_control(0.5).shape
         (1,)
         >>> pack_time_control(0.5, jnp.array([1.0, 2.0])).shape
@@ -75,7 +75,7 @@ def unpack_time_control(
 
     Example:
         >>> import jax.numpy as jnp
-        >>> from gauss_flows._src.conditioning import unpack_time_control
+        >>> from gauss_flows import unpack_time_control
         >>> t, control = unpack_time_control(jnp.array([0.5, 1.0, 2.0]), control_dim=2)
         >>> t.shape, control.shape
         ((1,), (2,))
@@ -109,7 +109,7 @@ def time_control_cond_shape(control_dim: int = 0) -> tuple[int, ...]:
         A one-tuple ``(1 + control_dim,)`` suitable for ``AbstractBijection``.
 
     Example:
-        >>> from gauss_flows._src.conditioning import time_control_cond_shape
+        >>> from gauss_flows import time_control_cond_shape
         >>> time_control_cond_shape()
         (1,)
         >>> time_control_cond_shape(3)

@@ -17,10 +17,18 @@ def _safe_normalize(x: Array) -> Array:
 
 
 def tangent_basis(x: Array) -> Array:
-    """Return an orthonormal basis of the tangent space ``T_x S^d``.
+    """Return an orthonormal basis of the tangent space ``Tₓ Sᵈ``.
 
     Uses a Householder reflection that maps ``x`` to ``±e₁`` and then takes
     columns ``2..d+1`` of that orthogonal matrix.
+
+    Args:
+        x: A point in ``ℝ^{d+1}`` (normalised internally to the sphere),
+            shape ``(d+1,)``.
+
+    Returns:
+        Tangent basis ``E`` of shape ``(d+1, d)`` with ``Eᵀ E = I`` and
+        ``xᵀ E = 0``.
 
     Shape:
         Input: ``(d+1,)``.
@@ -52,8 +60,17 @@ def expmap_sphere(
 ) -> Array:
     """Map a tangent vector at ``x`` to the sphere via the exponential map.
 
-    ``expmap(x, v) = x cos(||v||) + v sin(||v||) / ||v||`` with the
-    ``sin(r) / r`` factor evaluated via ``sinc`` for stability at ``r → 0``.
+    ``expmap(x, v) = x·cos(‖v‖) + v·sin(‖v‖) / ‖v‖`` with the ``sin(r) / r``
+    factor evaluated via ``sinc`` for stability at ``r → 0``. The component
+    of ``v`` along ``x`` is removed first, so ``v`` need not be exactly
+    tangent.
+
+    Args:
+        x: Base point in ``ℝ^{d+1}`` (normalised internally), shape ``(d+1,)``.
+        v: Tangent vector at ``x``, shape ``(d+1,)``.
+
+    Returns:
+        The point ``expmap(x, v)`` on the sphere, shape ``(d+1,)``.
 
     Shape:
         ``x`` and ``v`` are single events of shape ``(d+1,)``.
@@ -82,15 +99,24 @@ def logmap_sphere(
 ) -> Array:
     """Return the tangent vector at ``x`` whose exp-map reaches ``y``.
 
-    The log map is not uniquely defined when ``y`` is antipodal to ``x``; this
+    Inverse of :func:`expmap_sphere`: ``expmap(x, logmap(x, y)) ≈ y``. The
+    log map is not uniquely defined when ``y`` is antipodal to ``x``; this
     implementation returns ``π · e`` for a deterministic tangent direction
     ``e`` obtained from :func:`tangent_basis`, which at least satisfies
-    ``||logmap|| == π`` (the geodesic distance to the antipode) and is
+    ``‖logmap‖ == π`` (the geodesic distance to the antipode) and is
     continuous under perturbations of ``x``.
+
+    Args:
+        x: Base point on the sphere in ``ℝ^{d+1}`` (normalised internally),
+            shape ``(d+1,)``.
+        y: Target point on the sphere, shape ``(d+1,)``.
+
+    Returns:
+        The tangent vector in ``Tₓ Sᵈ`` reaching ``y``, shape ``(d+1,)``.
 
     Shape:
         ``x`` and ``y`` are single points on the sphere with shape ``(d+1,)``.
-        Returns a tangent vector in ``T_x S^d`` with shape ``(d+1,)``.
+        Returns a tangent vector in ``Tₓ Sᵈ`` with shape ``(d+1,)``.
 
     Example:
         >>> import jax.numpy as jnp

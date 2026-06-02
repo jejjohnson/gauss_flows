@@ -118,14 +118,17 @@ def fit_rbig(
     n_components: int = 8,
     random_state: int = 0,
 ) -> Transformed:
-    """Fit an iterative-Gaussianization (RBIG) flow to data.
+    """Fit an iterative-Gaussianization (RBIG) flow to data in closed form.
 
     Greedily walks ``n_layers`` blocks of ``[FixedRotation (PCA),
-    MixtureGaussianCDF (GMM per-dim)]``, fitting each from the current
-    state and propagating the data forward before the next block. The
-    result is a :class:`flowjax.distributions.Transformed` whose
-    ``log_prob`` is already a reasonable density estimator before any
-    gradient training.
+    MixtureGaussianCDF (GMM per-dim)]``, fitting each block directly from
+    the current data state — a per-dimension sklearn ``GaussianMixture``
+    EM fit, no gradient training — and propagating the data forward
+    before the next block. The result is a warm start: a
+    :class:`flowjax.distributions.Transformed` whose ``log_prob`` is
+    already a reasonable density estimator and can be refined further by
+    the usual NLL minimisation (see
+    :func:`~gauss_flows.fit_gaussianization_flow`).
 
     Args:
         x: Training data of shape ``(n, d)``.
@@ -136,16 +139,19 @@ def fit_rbig(
             ``random_state + block_idx * 1000 + dim_idx``. Defaults to 0.
 
     Returns:
-        A :class:`flowjax.distributions.Transformed` distribution over
-        ``R^d`` whose bijection Gaussianises ``x``.
+        A flowjax ``Transformed`` distribution over ℝ^d whose bijection
+        Gaussianises ``x``, with ``log_prob`` and ``sample``.
+
+    Raises:
+        ValueError: If ``x`` is not 2-D.
 
     Example:
         >>> import jax.random as jr
         >>> from gauss_flows import fit_rbig
         >>> x = jr.normal(jr.key(0), (500, 2))
         >>> flow = fit_rbig(x, n_layers=4, n_components=4)
-        >>> float(flow.log_prob(x).mean())  # doctest: +SKIP
-        -2.8...
+        >>> flow.sample(jr.key(1), (8,)).shape
+        (8, 2)
     """
     x_np = np.asarray(x, dtype=np.float32)
     if x_np.ndim != 2:
@@ -347,18 +353,20 @@ def fit_rbig_coupling(
     log_scale_bound: float = 5.0,
     random_state: int = 0,
 ) -> Transformed:
-    """Warm-start an RBIG-style coupling flow.
+    """Warm-start an RBIG-style coupling flow in closed form.
 
     Each block is ``[FixedRotation (PCA), MixtureGaussianCDFCoupling]``.
-    The coupling's conditioner is initialised with a zero kernel and a
-    bias set from per-b-dim GMM fits (via :func:`_init_coupling_from_fits`),
-    so the layer starts as a constant-in-``x_a`` mixture-CDF transform on
-    the ``x_b`` half — numerically equivalent to a diagonal marginal fit
-    on the ``x_b`` dims. Gradient training can then break the constancy
-    and let the conditioner modulate on ``x_a``.
+    The coupling's conditioner is initialised in closed form — no gradient
+    training — with a zero kernel and a bias set from per-b-dim sklearn
+    ``GaussianMixture`` fits (via :func:`_init_coupling_from_fits`), so
+    the layer starts as a constant-in-``x_a`` mixture-CDF transform on the
+    ``x_b`` half — numerically equivalent to a diagonal marginal fit on
+    the ``x_b`` dims. Gradient training (see
+    :func:`~gauss_flows.fit_gaussianization_flow`) can then break the
+    constancy and let the conditioner modulate on ``x_a``.
 
     Args:
-        x: Training data of shape ``(n, d)``.
+        x: Training data of shape ``(n, d)`` with even ``d ≥ 2``.
         key: JAX random key for the conditioner MLPs' hidden-layer init.
         n_layers: Number of ``(rotation, coupling)`` blocks. Defaults to 6.
         n_components: Mixture components per transformed dim. Defaults to 8.
@@ -369,7 +377,19 @@ def fit_rbig_coupling(
         random_state: Base seed for per-dim GMM EM fits. Defaults to 0.
 
     Returns:
-        A :class:`flowjax.distributions.Transformed` distribution.
+        A flowjax ``Transformed`` distribution with ``log_prob`` and ``sample``.
+
+    Raises:
+        ValueError: If ``x`` is not 2-D, or ``d`` is less than 2 or odd
+            (the half-swap coupling pair requires an even number of dims).
+
+    Example:
+        >>> import jax.random as jr
+        >>> from gauss_flows import fit_rbig_coupling
+        >>> x = jr.normal(jr.key(0), (500, 2))
+        >>> flow = fit_rbig_coupling(x, jr.key(1), n_layers=2, n_components=4)
+        >>> flow.sample(jr.key(2), (8,)).shape
+        (8, 2)
     """
     import jax.random as jr
 

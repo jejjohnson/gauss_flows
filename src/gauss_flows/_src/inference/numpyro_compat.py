@@ -14,25 +14,33 @@ from jaxtyping import PRNGKeyArray
 
 
 class FlowDist(dist_lib.Distribution):
-    """Wraps a flowjax Transformed distribution as a NumPyro distribution.
+    """Wrap a flowjax ``Transformed`` distribution as a NumPyro distribution.
 
-    This allows Gaussianization flows (and other flowjax distributions) to be
-    used directly in NumPyro probabilistic programs with standard MCMC
-    or variational inference algorithms.
+    Subclasses :class:`numpyro.distributions.Distribution`, delegating
+    ``sample`` and ``log_prob`` to the wrapped flow. This lets
+    Gaussianization flows (and other flowjax distributions) be used
+    directly in NumPyro probabilistic programs with standard MCMC or
+    variational inference algorithms. The batch shape is empty and the
+    event shape is taken from ``flow.shape``; the support is a real
+    vector.
 
     Args:
-        flow: A flowjax Transformed distribution.
+        flow: A flowjax ``Transformed`` distribution.
 
     Example:
         >>> import jax.random as jr
-        >>> import numpyro
-        >>> import numpyro.distributions as dist
         >>> from gauss_flows import gaussianization_flow, FlowDist
-        >>> key = jr.key(0)
-        >>> flow = gaussianization_flow(key, n_dims=2)
+        >>> flow = gaussianization_flow(jr.key(0), n_dims=2)
         >>> flow_dist = FlowDist(flow)
-        >>> # Use in a NumPyro model:
-        >>> # numpyro.sample("x", flow_dist)
+        >>> flow_dist.event_shape
+        (2,)
+        >>> x = flow_dist.sample(jr.key(1), (5,))
+        >>> x.shape
+        (5, 2)
+        >>> flow_dist.log_prob(x).shape
+        (5,)
+
+        Use inside a NumPyro model with ``numpyro.sample("x", flow_dist)``.
     """
 
     arg_constraints: ClassVar[dict] = {}
@@ -49,10 +57,10 @@ class FlowDist(dist_lib.Distribution):
 
         Args:
             key: JAX random key.
-            sample_shape: Shape of samples to draw. Defaults to ().
+            sample_shape: Shape of samples to draw. Defaults to ``()``.
 
         Returns:
-            Samples of shape sample_shape + event_shape.
+            Samples of shape ``sample_shape + event_shape``.
         """
         return self.flow.sample(key, sample_shape)
 
@@ -60,10 +68,11 @@ class FlowDist(dist_lib.Distribution):
         """Compute log probability under the flow.
 
         Args:
-            value: Points at which to evaluate the log probability.
+            value: Points of shape ``sample_shape + event_shape`` at which
+                to evaluate the log probability.
 
         Returns:
-            Log probability values.
+            Log-probability values of shape ``sample_shape``.
         """
         return self.flow.log_prob(value)
 

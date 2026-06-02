@@ -111,15 +111,20 @@ def _log_bessel_iv(nu: Array, x: Array) -> Array:
 
 
 class UniformOnSphere(AbstractDistribution):
-    """Uniform distribution on ``S^d ⊂ ℝ^{d+1}``.
+    """Uniform distribution on the unit sphere ``Sᵈ ⊂ ℝ^{d+1}``.
+
+    Constant density ``1 / A_d`` over the sphere, where ``A_d`` is the
+    surface area of ``Sᵈ``; ``log_prob`` returns ``−∞`` for off-sphere
+    points. Samples are drawn by normalising an isotropic Gaussian, so
+    they satisfy ``‖x‖₂ = 1`` up to numerical precision. Useful as a flow
+    base for directional / rotation-invariant data.
 
     Args:
         d: Intrinsic sphere dimension. Samples live in ``ℝ^{d+1}``.
 
     Shape:
-        Event shape: ``(d+1,)``.
-        Sample shape: arbitrary leading dimensions.
-        Samples satisfy ``||x||₂ = 1`` up to numerical precision.
+        - log_prob: ``(d+1,)`` → scalar    (batch via vmap / leading axes)
+        - sample:   ``(key, sample_shape)`` → ``(*sample_shape, d+1)``
 
     Example:
         >>> import jax.random as jr
@@ -153,22 +158,30 @@ class UniformOnSphere(AbstractDistribution):
 
 
 class VonMisesFisher(AbstractDistribution):
-    """Von Mises–Fisher distribution on ``S^d ⊂ ℝ^{d+1}``.
+    """Von Mises–Fisher distribution on the unit sphere ``Sᵈ ⊂ ℝ^{d+1}``.
 
-    Args:
-        mean: Mean direction in ``ℝ^{d+1}``. Normalized internally. Integer
-            inputs are promoted to a floating dtype.
-        concentration: Non-negative scalar concentration ``κ``.
-
-    Shape:
-        Event shape: ``(d+1,)`` where ``d = mean.shape[0] - 1``.
-        Sample shape: arbitrary leading dimensions.
-        ``log_prob`` is evaluated on single points on the sphere.
+    Density ``p(x) ∝ exp(κ · μᵀx)`` on the sphere: the spherical analogue of
+    an isotropic Gaussian, peaked at the mean direction ``μ`` with
+    concentration ``κ`` (``κ = 0`` recovers :class:`UniformOnSphere`). The
+    normaliser involves a modified Bessel function ``I_ν(κ)``, evaluated
+    here via a hybrid power-series / asymptotic expansion. Sampling uses
+    Wood's (1994) rejection scheme. Useful as a flow base for concentrated
+    directional data.
 
     Invalid inputs (zero-vector ``mean`` or negative ``concentration``) are
     propagated as ``NaN`` through ``log_prob`` / ``sample`` rather than being
-    rejected at construction, so the constructor stays ``jit``/``vmap``-safe
-    (e.g. for a mixture of VMFs).
+    rejected at construction, so the constructor stays ``jit`` / ``vmap``-safe
+    (e.g. inside a mixture of VMFs).
+
+    Args:
+        mean: Mean direction ``μ`` in ``ℝ^{d+1}``. Normalised internally;
+            integer inputs are promoted to a floating dtype. Sets the event
+            dimension ``d = mean.shape[0] − 1``.
+        concentration: Non-negative scalar concentration ``κ``.
+
+    Shape:
+        - log_prob: ``(d+1,)`` → scalar    (batch via vmap / leading axes)
+        - sample:   ``(key, sample_shape)`` → ``(*sample_shape, d+1)``
 
     Example:
         >>> import jax.numpy as jnp

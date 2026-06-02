@@ -4,26 +4,57 @@ from __future__ import annotations
 
 import jax.numpy as jnp
 from flowjax.bijections import AbstractBijection, Coupling, RationalQuadraticSpline
+from jax import Array
 from jaxtyping import ArrayLike, PRNGKeyArray
 
 
 class RQSplineCoupling(AbstractBijection):
     """Rational quadratic spline coupling layer.
 
-    Like :class:`AffineCoupling`, but uses a rational quadratic spline as
-    the per-dim transformer. With ``cond_dim > 0`` the inner MLP additionally
-    consumes an external context vector, concatenated to the first-half
-    input.
+    Splits the input into two halves along its single (1D) axis. The first
+    ``n_dims // 2`` dims pass through unchanged and feed an inner conditioner
+    MLP that emits the knot/derivative parameters of a monotone rational
+    quadratic spline applied per-dim to the remaining half. Like
+    :class:`AffineCoupling` but with a far more expressive per-dim
+    transformer; with ``cond_dim`` set, the inner MLP additionally consumes
+    an external context vector concatenated onto the first-half input.
+
+    Wraps :class:`flowjax.bijections.Coupling` with a
+    :class:`flowjax.bijections.RationalQuadraticSpline` transformer; this
+    class adds the convention that an unconditional layer drops any incoming
+    ``condition`` so a base-only condition cannot leak into the inner MLP.
 
     Args:
-        key: JAX random key.
-        shape: Shape of the input ``(n_dims,)``.
-        n_bins: Number of spline bins. Defaults to 8.
-        interval: Spline interval. Defaults to 5.0.
+        key: JAX random key for conditioner MLP initialisation.
+        shape: Event shape ``(n_dims,)``. Only 1D inputs are supported.
+        n_bins: Number of spline bins (knots). Defaults to 8.
+        interval: Half-width of the spline interval ``[−interval, interval]``;
+            the transformer is affine (identity-tail) outside it. Defaults to 5.0.
         cond_dim: If not ``None``, the layer expects a 1-D ``condition`` of
             shape ``(cond_dim,)`` at call time. Defaults to ``None``.
         nn_width: Hidden layer width of the conditioner MLP. Defaults to 64.
         nn_depth: Depth of the conditioner MLP. Defaults to 2.
+
+    Raises:
+        ValueError: If ``shape`` is not 1D, or ``cond_dim`` is a non-positive int.
+
+    Shape:
+        - transform_and_log_det: (n_dims,) → (n_dims,), scalar log_det
+        - inverse_and_log_det:   (n_dims,) → (n_dims,), scalar log_det
+        (with ``cond_dim`` set, also takes a ``condition`` of shape ``(cond_dim,)``)
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> from gauss_flows import RQSplineCoupling
+        >>> t = RQSplineCoupling(jr.key(0), shape=(4,))
+        >>> x = jr.normal(jr.key(1), (4,))
+        >>> y, log_det = t.transform_and_log_det(x)
+        >>> y.shape
+        (4,)
+        >>> x_rec, log_det_inv = t.inverse_and_log_det(y)
+        >>> bool(jnp.allclose(x, x_rec, atol=1e-5))
+        True
     """
 
     shape: tuple[int, ...]
@@ -62,12 +93,38 @@ class RQSplineCoupling(AbstractBijection):
             nn_depth=nn_depth,
         )
 
-    def transform_and_log_det(self, x: ArrayLike, condition=None):
+    def transform_and_log_det(
+        self, x: ArrayLike, condition: ArrayLike | None = None
+    ) -> tuple[Array, Array]:
+        """Forward map ``x → y`` and its scalar log-determinant.
+
+        Args:
+            x: Single event of shape ``(n_dims,)``.
+            condition: Context of shape ``(cond_dim,)`` when the layer is
+                conditional; ignored (dropped) when ``cond_dim=None``.
+
+        Returns:
+            Tuple ``(y, log_det)`` with ``y`` of shape ``(n_dims,)`` and a
+            scalar ``log_det``.
+        """
         if self.cond_shape is None:
             condition = None
         return self._coupling.transform_and_log_det(jnp.asarray(x), condition)
 
-    def inverse_and_log_det(self, y: ArrayLike, condition=None):
+    def inverse_and_log_det(
+        self, y: ArrayLike, condition: ArrayLike | None = None
+    ) -> tuple[Array, Array]:
+        """Inverse map ``y → x`` and its scalar log-determinant.
+
+        Args:
+            y: Single event of shape ``(n_dims,)``.
+            condition: Context of shape ``(cond_dim,)`` when the layer is
+                conditional; ignored (dropped) when ``cond_dim=None``.
+
+        Returns:
+            Tuple ``(x, log_det)`` with ``x`` of shape ``(n_dims,)`` and a
+            scalar ``log_det``.
+        """
         if self.cond_shape is None:
             condition = None
         return self._coupling.inverse_and_log_det(jnp.asarray(y), condition)

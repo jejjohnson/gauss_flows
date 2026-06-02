@@ -19,8 +19,12 @@ def iterative_rbig(
 ) -> Transformed:
     """Construct an iterative RBIG (Rotation-Based Iterative Gaussianization) flow.
 
-    This implements the classic RBIG algorithm as a normalizing flow, alternating
-    between marginal Gaussianization and rotation at each iteration.
+    Implements the classic RBIG algorithm as a normalizing flow: each of
+    ``n_layers`` iterations alternates a marginal Gaussianization step G
+    with a rotation R (the G∘R block). This is a thin wrapper around
+    :func:`~gauss_flows.gaussianization_flow` with a large default
+    ``n_layers`` reflecting the many shallow iterations RBIG typically
+    uses; all arguments are forwarded unchanged.
 
     Args:
         key: JAX random key.
@@ -28,12 +32,19 @@ def iterative_rbig(
         n_layers: Number of RBIG iterations. Defaults to 100.
         n_components: Number of mixture components for marginal Gaussianization.
             Defaults to 8.
-        rotation: Type of rotation, either "householder" or "orthogonal".
-            Defaults to "householder".
-        n_reflections: Number of Householder reflections. Defaults to n_dims.
+        rotation: Type of rotation, either ``"householder"`` or
+            ``"orthogonal"``. Defaults to ``"householder"``.
+        n_reflections: Number of Householder reflections. Defaults to ``n_dims``.
 
     Returns:
-        A flowjax Transformed distribution.
+        A flowjax ``Transformed`` distribution with ``log_prob`` and ``sample``.
+
+    Example:
+        >>> import jax.random as jr
+        >>> from gauss_flows import iterative_rbig
+        >>> flow = iterative_rbig(jr.key(0), n_dims=4, n_layers=3, n_components=4)
+        >>> flow.sample(jr.key(1), (5,)).shape
+        (5, 4)
     """
     return gaussianization_flow(
         key,

@@ -42,13 +42,34 @@ class BatchNorm(AbstractBijection):
     explicitly instead of mutating in place.
 
     Args:
-        shape: Input shape ``(n_dims,)``.
+        shape: Event shape ``(n_dims,)``. Must be 1-D.
         momentum: Exponential moving-average factor for running statistics,
             updated as ``running = (1 - momentum) * running + momentum * batch``.
-        eps: Numerical stability term added to the variance.
-        use_running_average: Whether to use running statistics (evaluation).
+            Must lie in ``(0, 1)``. Defaults to ``0.1``.
+        eps: Numerical stability term added to the variance. Defaults to
+            ``1e-5``.
+        use_running_average: Whether to use running statistics (evaluation)
+            rather than batch statistics. Defaults to ``False``.
+
+    Raises:
+        ValueError: If ``shape`` is not 1-D or ``momentum`` is outside
+            ``(0, 1)``.
+
+    Shape:
+        - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
+        - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
 
     Example:
+        >>> import jax
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> from gauss_flows import BatchNorm
+        >>> batch = jr.normal(jr.key(0), (8, 2))
+        >>> bn = BatchNorm(shape=(2,)).with_batch_stats_from_data(batch)
+        >>> y, log_det = bn.transform_and_log_det(batch[0])
+        >>> y.shape, log_det.shape
+        ((2,), ())
+
         Training step pattern (per batch)::
 
             @eqx.filter_value_and_grad

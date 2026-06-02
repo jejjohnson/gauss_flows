@@ -19,12 +19,34 @@ class LULinearPermute(AbstractBijection):
 
     Cheaper than :class:`OrthogonalRotation` in the relevant regime (no Cayley
     solve at forward / inverse time) and widely used as the mixing layer in
-    Neural Spline Flows (Durkan et al. 2019).
+    Neural Spline Flows (Durkan et al. 2019, *Neural Spline Flows*).
+
+    Operates on a single ``(n_dims,)`` event; callers vmap over any batch axis.
 
     Args:
-        shape: Shape of the input ``(n_dims,)``.
+        shape: Event shape ``(n_dims,)``. Only 1-D events are supported.
         permutation: Optional permutation of length ``n_dims``. Defaults to the
-            reverse permutation.
+            reverse permutation ``[n_dims−1, …, 1, 0]``.
+
+    Raises:
+        ValueError: If ``shape`` is not 1-D, or ``permutation`` is not a valid
+            permutation of ``0..n_dims−1`` with the right shape.
+
+    Shape:
+        - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
+        - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> from gauss_flows import LULinearPermute
+        >>> t = LULinearPermute(shape=(3,))  # reverse permutation
+        >>> x = jnp.array([1.0, 2.0, 3.0])
+        >>> y, log_det = t.transform_and_log_det(x)
+        >>> y.shape
+        (3,)
+        >>> x_rec, log_det_inv = t.inverse_and_log_det(y)
+        >>> bool(jnp.allclose(x, x_rec, atol=1e-5))
+        True
     """
 
     shape: tuple[int, ...]

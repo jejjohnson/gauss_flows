@@ -24,6 +24,7 @@ def _wrap_angles(x: Array, mask: Array, bound: float) -> Array:
 
 
 def _build_periodic_mask(ind: tuple[int, ...], n_dims: int) -> Array:
+    """Boolean mask of length ``n_dims`` that is True at the periodic indices."""
     mask = jnp.zeros(n_dims, dtype=bool)
     if ind:
         mask = mask.at[jnp.array(ind)].set(True)

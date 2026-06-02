@@ -5,6 +5,8 @@ provides a joint multi-modal base for Gaussianization pipelines on targets
 that are multi-modal or fat-tailed.
 """
 
+from __future__ import annotations
+
 from typing import ClassVar
 
 import equinox as eqx
@@ -19,27 +21,49 @@ from jaxtyping import PRNGKeyArray
 
 
 class GaussianMixture(AbstractDistribution):
-    """Trainable multivariate Gaussian Mixture Model base distribution.
+    """Trainable multivariate Gaussian-mixture base distribution.
 
     Parameterises a ``K``-component mixture of ``D``-dimensional Gaussians
-    with trainable component means, scales, and weights. Supports a
-    diagonal covariance parameterisation (scale per component per dim)
-    and a full-covariance Cholesky parameterisation.
+    with trainable component means, scales, and weights. The density is
+    ``p(x) = ∑ₖ wₖ · N(x; locₖ, Σₖ)`` with mixing weights ``w = softmax(
+    log_weights)``. Two covariance parameterisations are supported: a
+    diagonal one (one scale per component per dim) and a full-covariance
+    one (a per-component lower-triangular Cholesky factor).
+
+    Use as a flow base when the Gaussianized target is multi-modal or
+    fat-tailed — the natural companion to :class:`MixtureGaussianCDF`,
+    the per-dimension marginal transform.
 
     Args:
         key: JAX random key used to initialise the component means.
         n_components: Number of mixture components ``K``.
-        event_shape: Shape of a single sample ``(D,)``.
-        diagonal: If True (default), diagonal covariance via ``log_scale``.
-            If False, full covariance via a per-component lower-triangular
-            Cholesky factor.
-        loc_init_scale: Std of the Gaussian used to initialise component means.
+        event_shape: Shape of a single sample ``(D,)``. 1-D only.
+        diagonal: If ``True`` (default), diagonal covariance via
+            ``log_scale``. If ``False``, full covariance via a per-component
+            lower-triangular Cholesky factor. Defaults to ``True``.
+        loc_init_scale: Std of the Gaussian used to initialise component
+            means. Defaults to ``1.0``.
         log_scale_init: Initial value of ``log_scale`` (resp. Cholesky
             log-diagonal for ``diagonal=False``). Defaults to ``0.0``
             (unit scale at init).
 
-    The event shape is stored as ``self.shape`` per the flowjax
-    distribution contract. Uniform initial mixing weights.
+    Note:
+        The event shape is stored as ``self.shape`` per the flowjax
+        distribution contract; mixing weights are uniform at init.
+
+    Shape:
+        - log_prob: ``(D,)`` → scalar    (batch via vmap / leading axes)
+        - sample:   ``(key, sample_shape)`` → ``(*sample_shape, D)``
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> from gauss_flows import GaussianMixture
+        >>> dist = GaussianMixture(jr.key(0), n_components=3, event_shape=(2,))
+        >>> dist.sample(jr.key(1), (8,)).shape
+        (8, 2)
+        >>> dist.log_prob(jnp.zeros(2)).shape
+        ()
     """
 
     n_components: int = eqx.field(static=True)

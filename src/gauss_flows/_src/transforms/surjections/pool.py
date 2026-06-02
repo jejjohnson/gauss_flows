@@ -52,14 +52,17 @@ class SimpleMaxPoolSurjection2d(AbstractSurjection):
         - ``log_det``:   scalar (shape ``()``)
 
     Example:
-        >>> import jax.numpy as jnp
-        >>> import jax.random as jr
-        >>> from gauss_flows import SimpleMaxPoolSurjection2d
-        >>>
-        >>> # ``my_decoder`` must implement the ConditionalDistribution
-        >>> # protocol — see _src/_protocols.py.
-        >>> surj = SimpleMaxPoolSurjection2d((8, 8, 3), my_decoder, pool_size=2)
-        >>> # z.shape == (4, 4, 3); residuals.shape == (4, 4, 3, 3) (pool_area-1).
+        ``my_decoder`` must implement the :class:`ConditionalDistribution`
+        protocol (see ``_src/_protocols.py``); it maps a pooled image
+        ``z`` of shape ``(4, 4, 3)`` to residuals of shape ``(4, 4, 3, 3)``::
+
+            import jax.numpy as jnp
+            import jax.random as jr
+            from gauss_flows import SimpleMaxPoolSurjection2d
+
+            surj = SimpleMaxPoolSurjection2d((8, 8, 3), my_decoder, pool_size=2)
+            z, log_det = surj.forward_and_log_det(jnp.zeros((8, 8, 3)), jr.key(0))
+            # z.shape == (4, 4, 3); residuals.shape == (4, 4, 3, 3) (pool_area-1).
     """
 
     stochastic_forward: ClassVar[bool] = False
