@@ -8,8 +8,14 @@ $$
 \log p_X(x) \;=\; \log p_Z\!\big(f(x)\big) \;+\; \log\left|\det \frac{\partial f}{\partial x}\right|,
 $$
 
-so every layer returns `(y, log_det)` from both `transform_and_log_det` (data → latent) and
-`inverse_and_log_det` (latent → data). All layers below subclass
+so each layer exposes its map and the log-determinant of its Jacobian in **both** directions —
+`transform_and_log_det` and `inverse_and_log_det`, each returning `(y, log_det)`. Per the
+[FlowJax](https://danielward27.github.io/flowjax/) convention a
+[`Transformed`](https://danielward27.github.io/flowjax/) distribution applies `transform` when
+**sampling** (base → data) and `inverse` when **evaluating density** (data → base — the $f$ in
+the formula above), so a layer's data/latent orientation is set by how it is composed, not by
+the method name. Generative-only layers such as `PlanarFlow` / `SylvesterFlow` implement only
+`transform_and_log_det`. All layers below subclass
 [`flowjax.bijections.AbstractBijection`](https://danielward27.github.io/flowjax/) and follow
 the **single-event** convention (`x.shape == self.shape`, scalar `log_det`); batch with
 `jax.vmap`.
