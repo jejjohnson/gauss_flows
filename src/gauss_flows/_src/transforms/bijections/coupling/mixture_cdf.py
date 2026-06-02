@@ -9,9 +9,9 @@ mixture-CDF Gaussianization
     log |det J| = Σᵢ [log f_i(x_{b,i}) − log φ(z_{b,i})]
 
 The inverse is a per-dim monotone bisection on ``F_i(x_{b,i}) = Φ(z_{b,i})``.
-We solve it with :func:`optimistix.root_find` backed by
-:class:`optimistix.Bisection` with ``expand_if_necessary=True``, matching the
-convention already established for :class:`DeepSigmoidCoupling`.
+We solve it with `optimistix.root_find` backed by
+`optimistix.Bisection` with ``expand_if_necessary=True``, matching the
+convention already established for `DeepSigmoidCoupling`.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ def _clamp_log_scale(raw: Array, bound: float) -> Array:
 
 
 def _invert_clamp_log_scale(clamped: ArrayLike, bound: float) -> Array:
-    """Invert :func:`_clamp_log_scale`. Used by IG warm-start init."""
+    """Invert `_clamp_log_scale`. Used by IG warm-start init."""
     y = jnp.clip(jnp.asarray(clamped) / bound, -1.0 + 1e-6, 1.0 - 1e-6)
     return jnp.arctanh(y)
 
@@ -45,7 +45,7 @@ class _MixtureGaussianCDFTransformer(AbstractBijection):
 
     A single-dim bijection ``z = Φ⁻¹(F(x; π, μ, σ))`` with trainable
     ``(logits, means, log_scales)``. Vectorised across dims by wrapping it
-    in :class:`flowjax.bijections.Coupling`.
+    in `flowjax.bijections.Coupling`.
     """
 
     n_components: int = eqx.field(static=True)
@@ -130,7 +130,7 @@ class MixtureGaussianCDFCoupling(AbstractBijection):
 
     The per-dim log-scales are passed through a tanh clamp
     ``bound · tanh(raw)`` for training stability and for RBIG warm-start
-    inversion — see :func:`gauss_flows._src.init.rbig.fit_rbig_coupling`.
+    inversion — see `gauss_flows._src.init.rbig.fit_rbig_coupling`.
 
     Args:
         key: JAX random key for the conditioner MLP.
@@ -154,7 +154,7 @@ class MixtureGaussianCDFCoupling(AbstractBijection):
         - inverse_and_log_det:   (n_dims,) → (n_dims,), scalar log_det
         (with ``cond_dim`` set, also takes a ``condition`` of shape ``(cond_dim,)``)
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import MixtureGaussianCDFCoupling

@@ -21,7 +21,7 @@ class PeriodicWrap(AbstractBijection):
     Wraps the chosen periodic dimensions into the canonical interval
     ``[−bound, bound]`` and leaves all other dimensions untouched.
 
-    .. warning::
+    !!! warning
         This subclasses ``flowjax.bijections.AbstractBijection`` for API
         compatibility but is **not a true bijection on ℝ** — it is a
         many-to-one canonical projection. ``x`` and ``x + 2·bound·k`` collapse
@@ -48,7 +48,7 @@ class PeriodicWrap(AbstractBijection):
         - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
           (returns the wrapped value, not the original ``x``; see warning)
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import PeriodicWrap
         >>> wrap = PeriodicWrap(ind=(0,), shape=(2,))

@@ -21,7 +21,7 @@ def fit_gaussianization_flow(
 ) -> tuple[AbstractDistribution, dict[str, list[float]]]:
     """Fit a Gaussianization flow to data by maximum likelihood.
 
-    Thin wrapper around :func:`flowjax.train.fit_to_data` with sensible
+    Thin wrapper around `flowjax.train.fit_to_data` with sensible
     defaults for Gaussianization flows. Minimises the negative
     log-likelihood with Adam and early stopping on a held-out validation
     split, returning the best-performing parameters.
@@ -29,7 +29,7 @@ def fit_gaussianization_flow(
     Args:
         key: JAX random key.
         dist: A flowjax distribution (e.g. from
-            :func:`~gauss_flows.gaussianization_flow`).
+            `gauss_flows.gaussianization_flow`).
         data: Training data array of shape ``(n_samples, n_dims)``.
         learning_rate: Adam optimizer learning rate. Defaults to 5e-4.
         max_epochs: Maximum training epochs. Defaults to 100.
@@ -43,17 +43,17 @@ def fit_gaussianization_flow(
         fitted flow and ``losses`` is a dict with ``"train"`` and ``"val"``
         lists of per-epoch losses.
 
-    Example:
-        .. code-block:: python
+    Examples:
+        ```python
+        import jax.random as jr
+        from gauss_flows import gaussianization_flow, fit_gaussianization_flow
 
-            import jax.random as jr
-            from gauss_flows import gaussianization_flow, fit_gaussianization_flow
-
-            data = jr.normal(jr.key(0), (1024, 2))
-            flow = gaussianization_flow(jr.key(1), n_dims=2, n_layers=2)
-            trained, losses = fit_gaussianization_flow(
-                jr.key(2), flow, data, max_epochs=5, show_progress=False
-            )
+        data = jr.normal(jr.key(0), (1024, 2))
+        flow = gaussianization_flow(jr.key(1), n_dims=2, n_layers=2)
+        trained, losses = fit_gaussianization_flow(
+            jr.key(2), flow, data, max_epochs=5, show_progress=False
+        )
+        ```
     """
     return fit_to_data(
         key,

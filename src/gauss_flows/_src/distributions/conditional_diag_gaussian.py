@@ -22,16 +22,16 @@ class ConditionalDiagGaussian(AbstractDistribution):
     The parameter network maps a 1-D context vector
     ``condition: (cond_dim,)`` to ``(2 * event_dim,)`` outputs which are then
     split (along the last axis) into ``loc`` and ``log_scale``. This mirrors
-    the coupling-net pattern used by :class:`AffineCoupling` and avoids the
+    the coupling-net pattern used by `AffineCoupling` and avoids the
     duplication of two parallel sub-networks.
 
     Args:
-        key: PRNG key used to initialise the default :class:`equinox.nn.MLP`.
+        key: PRNG key used to initialise the default `equinox.nn.MLP`.
             Ignored when a pre-built ``param_net`` is supplied.
         event_shape: Single-event shape ``(D,)``. 1-D only.
         cond_shape: Condition shape ``(cond_dim,)``. 1-D only.
         param_net: Optional pre-built callable ``(cond_dim,) -> (2 * D,)``.
-            If omitted, a default :class:`equinox.nn.MLP` is built using
+            If omitted, a default `equinox.nn.MLP` is built using
             ``nn_width`` / ``nn_depth`` / ``activation``.
         nn_width: Width of the default MLP.
         nn_depth: Depth of the default MLP.
@@ -42,7 +42,7 @@ class ConditionalDiagGaussian(AbstractDistribution):
         - Sample / log_prob input: ``(D,)``
         - log_prob output: scalar ``()``
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import ConditionalDiagGaussian

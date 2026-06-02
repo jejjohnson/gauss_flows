@@ -34,7 +34,7 @@ def tangent_basis(x: Array) -> Array:
         Input: ``(d+1,)``.
         Output: ``(d+1, d)`` with ``Eᵀ E = I`` and ``xᵀ E = 0``.
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import tangent_basis
         >>> x = jnp.array([0.0, 0.0, 1.0])
@@ -76,7 +76,7 @@ def expmap_sphere(
         ``x`` and ``v`` are single events of shape ``(d+1,)``.
         Returns a single point on the sphere with shape ``(d+1,)``.
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import expmap_sphere
         >>> x = jnp.array([0.0, 0.0, 1.0])
@@ -99,10 +99,10 @@ def logmap_sphere(
 ) -> Array:
     """Return the tangent vector at ``x`` whose exp-map reaches ``y``.
 
-    Inverse of :func:`expmap_sphere`: ``expmap(x, logmap(x, y)) ≈ y``. The
+    Inverse of `expmap_sphere`: ``expmap(x, logmap(x, y)) ≈ y``. The
     log map is not uniquely defined when ``y`` is antipodal to ``x``; this
     implementation returns ``π · e`` for a deterministic tangent direction
-    ``e`` obtained from :func:`tangent_basis`, which at least satisfies
+    ``e`` obtained from `tangent_basis`, which at least satisfies
     ``‖logmap‖ == π`` (the geodesic distance to the antipode) and is
     continuous under perturbations of ``x``.
 
@@ -118,7 +118,7 @@ def logmap_sphere(
         ``x`` and ``y`` are single points on the sphere with shape ``(d+1,)``.
         Returns a tangent vector in ``Tₓ Sᵈ`` with shape ``(d+1,)``.
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import expmap_sphere, logmap_sphere
         >>> x = jnp.array([0.0, 0.0, 1.0])

@@ -1,7 +1,7 @@
 """Shared helpers for periodic / circular bijections.
 
-Used by :mod:`.shift`, :mod:`.wrap`, and
-:mod:`...coupling.circular_spline` — kept in one place so the wrapping
+Used by `.shift`, `.wrap`, and
+`...coupling.circular_spline` — kept in one place so the wrapping
 primitives remain consistent across every transform that treats an input
 dim as living on the circle.
 """

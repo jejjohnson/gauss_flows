@@ -39,7 +39,7 @@ class PeriodicShift(AbstractBijection):
         - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
         - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import PeriodicShift
         >>> shift = PeriodicShift(ind=(0,), shape=(2,), shift_init=0.25)

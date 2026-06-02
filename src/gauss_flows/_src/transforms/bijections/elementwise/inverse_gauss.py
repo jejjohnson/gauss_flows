@@ -29,7 +29,7 @@ class InverseGaussCDF(AbstractBijection):
         - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
         - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import InverseGaussCDF
         >>> t = InverseGaussCDF(shape=(3,))

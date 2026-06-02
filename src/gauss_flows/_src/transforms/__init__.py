@@ -1,7 +1,7 @@
 """Transforms sub-package for gauss_flows.
 
 Re-exports every transform class from the nested SurVAE-taxonomy
-subpackages (:mod:`.bijections`, :mod:`.surjections`, :mod:`.stochastic`)
+subpackages (`.bijections`, `.surjections`, `.stochastic`)
 so downstream code can keep importing from ``gauss_flows._src.transforms``
 without caring which leaf module a class lives in.
 """

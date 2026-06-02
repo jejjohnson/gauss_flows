@@ -13,7 +13,7 @@ from jaxtyping import ArrayLike, PRNGKeyArray
 def _center_log_scale(log_scale: Array) -> Array:
     """Center log-scales so ``Σᵢ log_scaleᵢ = 0`` in exact arithmetic.
 
-    In float32 the centering leaves ~1e-7 drift per layer; :class:`GINCoupling`
+    In float32 the centering leaves ~1e-7 drift per layer; `GINCoupling`
     returns a hardcoded zero ``log_det`` rather than ``jnp.sum`` of this tensor
     to keep the volume preservation drift-free through stacked layers.
     """
@@ -23,7 +23,7 @@ def _center_log_scale(log_scale: Array) -> Array:
 class GINCoupling(AbstractBijection):
     """Volume-preserving affine coupling from Sorrenson et al. (2020).
 
-    This matches :class:`AffineCoupling` except the active-half log-scales are
+    This matches `AffineCoupling` except the active-half log-scales are
     centred before exponentiation:
 
     ``y_active = x_active · exp(log_scale − mean(log_scale)) + shift``
@@ -59,7 +59,7 @@ class GINCoupling(AbstractBijection):
         - inverse_and_log_det:   (n_dims,) → (n_dims,), scalar log_det (≡ 0)
         (with ``cond_dim`` set, also takes a ``condition`` of shape ``(cond_dim,)``)
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import GINCoupling

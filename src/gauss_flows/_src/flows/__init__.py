@@ -1,8 +1,8 @@
-"""Flow constructors and the :class:`SurVAEFlow` container.
+"""Flow constructors and the `SurVAEFlow` container.
 
-- :mod:`.survae` holds the bijection/surjection chain container.
-- :mod:`.gaussianization` holds the RBIG-style flow factories.
-- :mod:`.rbig` holds the classic iterative-RBIG constructor.
+- `.survae` holds the bijection/surjection chain container.
+- `.gaussianization` holds the RBIG-style flow factories.
+- `.rbig` holds the classic iterative-RBIG constructor.
 """
 
 from gauss_flows._src.flows.class_cond_flow import ClassCondFlow

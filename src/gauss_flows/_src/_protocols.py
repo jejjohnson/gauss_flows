@@ -3,8 +3,8 @@
 These ``Protocol`` definitions describe the minimal duck-typed interfaces that
 SurVAE-style transforms (and their tests) need from a "conditional
 distribution" object — without forcing inheritance from any concrete base
-class. Concrete implementations can come from :mod:`numpyro.distributions`,
-:mod:`flowjax.distributions` (via thin wrappers), or user code.
+class. Concrete implementations can come from `numpyro.distributions`,
+`flowjax.distributions` (via thin wrappers), or user code.
 """
 
 from __future__ import annotations

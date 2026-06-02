@@ -11,7 +11,7 @@ from jaxtyping import PRNGKeyArray
 
 
 class NumpyroBase(AbstractDistribution):
-    """Wrap any :class:`numpyro.distributions.Distribution` as a flowjax base.
+    """Wrap any `numpyro.distributions.Distribution` as a flowjax base.
 
     Two construction modes:
 
@@ -32,7 +32,7 @@ class NumpyroBase(AbstractDistribution):
     Vector events: numpyro returns one log-prob per *event-shape* position
     by default. Wrap your distribution in ``.to_event(rank)`` so that
     ``log_prob`` returns a scalar; alternatively, use a multivariate
-    distribution like :class:`numpyro.distributions.MultivariateNormal` whose
+    distribution like `numpyro.distributions.MultivariateNormal` whose
     ``event_shape`` already encodes the rank.
 
     Args:
@@ -48,7 +48,7 @@ class NumpyroBase(AbstractDistribution):
         - Sample / log_prob input: ``event_shape``
         - log_prob output: scalar ``()``
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> import numpyro.distributions as ndist

@@ -40,7 +40,7 @@ class SimpleMaxPoolSurjection2d(AbstractSurjection):
     Args:
         shape: Image event shape ``(H, W, C)``. Both spatial dims must be
             divisible by ``pool_size``.
-        decoder: Object satisfying :class:`ConditionalDistribution` —
+        decoder: Object satisfying `ConditionalDistribution` —
             ``sample(key, *, condition=z)`` must produce an array of shape
             ``(H/ps, W/ps, C, pool_area − 1)`` and ``log_prob(value, *,
             condition=z)`` must return a scalar.
@@ -51,18 +51,19 @@ class SimpleMaxPoolSurjection2d(AbstractSurjection):
         - Output ``z``:  ``(H/pool_size, W/pool_size, C)``
         - ``log_det``:   scalar (shape ``()``)
 
-    Example:
-        ``my_decoder`` must implement the :class:`ConditionalDistribution`
+    Examples:
+        ``my_decoder`` must implement the `ConditionalDistribution`
         protocol (see ``_src/_protocols.py``); it maps a pooled image
-        ``z`` of shape ``(4, 4, 3)`` to residuals of shape ``(4, 4, 3, 3)``::
+        ``z`` of shape ``(4, 4, 3)`` to residuals of shape ``(4, 4, 3, 3)``:
+        ```python
+        import jax.numpy as jnp
+        import jax.random as jr
+        from gauss_flows import SimpleMaxPoolSurjection2d
 
-            import jax.numpy as jnp
-            import jax.random as jr
-            from gauss_flows import SimpleMaxPoolSurjection2d
-
-            surj = SimpleMaxPoolSurjection2d((8, 8, 3), my_decoder, pool_size=2)
-            z, log_det = surj.forward_and_log_det(jnp.zeros((8, 8, 3)), jr.key(0))
-            # z.shape == (4, 4, 3); residuals.shape == (4, 4, 3, 3) (pool_area-1).
+        surj = SimpleMaxPoolSurjection2d((8, 8, 3), my_decoder, pool_size=2)
+        z, log_det = surj.forward_and_log_det(jnp.zeros((8, 8, 3)), jr.key(0))
+        # z.shape == (4, 4, 3); residuals.shape == (4, 4, 3, 3) (pool_area-1).
+        ```
     """
 
     stochastic_forward: ClassVar[bool] = False

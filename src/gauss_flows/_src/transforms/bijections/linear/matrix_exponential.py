@@ -41,15 +41,15 @@ class MatrixExponential(AbstractBijection):
         w_init_scale: Standard deviation used to initialise ``W`` and ``b``.
         use_bias: If ``False``, drop the ``h(t) · b`` term.
         time_bias_net: Optional scalar time gate ``h`` with ``h(0) = 0``.
-            Defaults to :class:`gauss_flows.TimeIdentity` when ``use_bias=True``.
+            Defaults to `gauss_flows.TimeIdentity` when ``use_bias=True``.
 
     Shape:
         - Input ``x``: ``(dim,)``
-        - Condition: packed time ``(1,)`` from :func:`gauss_flows.pack_time_control`
+        - Condition: packed time ``(1,)`` from `gauss_flows.pack_time_control`
         - Output ``y``: ``(dim,)``
         - ``log_det``: scalar ``()``
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import MatrixExponential, pack_time_control

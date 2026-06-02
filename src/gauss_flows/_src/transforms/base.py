@@ -39,7 +39,7 @@ from jaxtyping import ArrayLike, PRNGKeyArray
 class AbstractSurjection(eqx.Module):
     """Base class for SurVAE surjective transforms.
 
-    Subclasses set the three class-level flags so :class:`SurVAEFlow` (and
+    Subclasses set the three class-level flags so `SurVAEFlow` (and
     other containers) can decide whether ``log_prob`` is exact or only an
     evidence lower bound:
 

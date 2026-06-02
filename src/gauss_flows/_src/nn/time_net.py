@@ -38,7 +38,7 @@ class TimeFourier(eqx.Module):
         - Input ``t``: ``()`` or ``(1,)``
         - Output: scalar ``()``
 
-    Example:
+    Examples:
         >>> import jax.random as jr
         >>> from gauss_flows import TimeFourier
         >>> gate = TimeFourier(jr.key(0), embedding_dim=8)
@@ -78,7 +78,7 @@ class TimeTanh(eqx.Module):
         - Input ``t``: ``()`` or ``(1,)``
         - Output: scalar ``()``
 
-    Example:
+    Examples:
         >>> import jax.random as jr
         >>> from gauss_flows import TimeTanh
         >>> gate = TimeTanh(jr.key(0), embedding_dim=8)
@@ -108,7 +108,7 @@ class TimeIdentity(eqx.Module):
         - Input ``t``: ``()`` or ``(1,)``
         - Output: scalar ``()``
 
-    Example:
+    Examples:
         >>> from gauss_flows import TimeIdentity
         >>> gate = TimeIdentity()
         >>> float(gate(0.25))

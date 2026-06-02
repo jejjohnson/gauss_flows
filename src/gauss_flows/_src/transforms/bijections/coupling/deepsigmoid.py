@@ -29,7 +29,7 @@ class _DeepSigmoidTransformer(AbstractBijection):
         dy/dx = base_scale + Σᵢ amplitudesᵢ · slopesᵢ · σ(·) · (1 − σ(·))
 
     with ``base_scale``, ``amplitudes``, ``slopes`` constrained strictly
-    positive via :class:`paramax.Parameterize` wrapping ``softplus + 1e-4``
+    positive via `paramax.Parameterize` wrapping ``softplus + 1e-4``
     (mirrors the flowjax convention in ``RQSpline``, ``StudentT``, etc.).
     ``dy/dx > 0`` everywhere → strictly monotone, hence invertible. Matches
     the *single-layer* sigmoid flow of Huang et al. (2018) NAF, §3.2; it
@@ -38,8 +38,8 @@ class _DeepSigmoidTransformer(AbstractBijection):
     multi-modal targets and the loss surface tends to have a strong
     attractor at the affine local minimum (see PR #45).
 
-    The inverse solves ``y = _forward(x)`` via :func:`optimistix.root_find`
-    with :class:`optimistix.Bisection` — this gives ``expand_if_necessary``
+    The inverse solves ``y = _forward(x)`` via `optimistix.root_find`
+    with `optimistix.Bisection` — this gives ``expand_if_necessary``
     bracket growth and proper convergence handling, replacing the previous
     hand-rolled fori_loop bisection.
     """
@@ -129,7 +129,7 @@ class DeepSigmoidCoupling(AbstractBijection):
     """Coupling layer with a monotone single-layer sigmoidal transformer.
 
     Replaces ``AffineCoupling``'s affine transformer with the
-    :class:`_DeepSigmoidTransformer` — a per-dim monotone function
+    `_DeepSigmoidTransformer` — a per-dim monotone function
     parametrised by ``n_components`` sigmoid units (single-layer DSF, Huang
     et al. 2018 NAF §3.2). The transformer is *strictly more expressive*
     than affine in the function-class sense: it has nonzero second derivative
@@ -165,7 +165,7 @@ class DeepSigmoidCoupling(AbstractBijection):
         the coupling splits into ``n_dims // 2`` kept + transformed halves, and
         ``log_det`` sums ``log(dy/dx)`` over the transformed dims)
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import DeepSigmoidCoupling

@@ -34,7 +34,7 @@ class HaarWavelet(AbstractBijection):
         - transform_and_log_det: ``(…, n)`` → ``(…, n)``, scalar log_det = −n·log 2
         - inverse_and_log_det:   ``(…, n)`` → ``(…, n)``, scalar log_det = +n·log 2
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import HaarWavelet
         >>> t = HaarWavelet(shape=(4,))

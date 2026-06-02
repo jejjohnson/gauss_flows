@@ -38,7 +38,7 @@ class HouseholderRotation(AbstractBijection):
         - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det = 0
         - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det = 0
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import HouseholderRotation
         >>> t = HouseholderRotation(n_reflections=2, shape=(3,))
@@ -103,7 +103,7 @@ class OrthogonalRotation(AbstractBijection):
         - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det = 0
         - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det = 0
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import OrthogonalRotation
         >>> t = OrthogonalRotation(shape=(3,))  # Q = I at init
@@ -154,16 +154,16 @@ class FixedRotation(AbstractBijection):
     """Fixed (non-trainable) orthogonal rotation matrix.
 
     Applies a pre-computed orthogonal matrix ``y = matrix·x`` (e.g. a PCA
-    rotation from :meth:`from_data`) that is held constant during training.
+    rotation from `from_data`) that is held constant during training.
     Orthogonality makes the map volume-preserving, so ``log_det = 0`` exactly
     and the inverse is the transpose.
 
-    The matrix is stored wrapped in :class:`paramax.NonTrainable` so
+    The matrix is stored wrapped in `paramax.NonTrainable` so
     ``flowjax.train.fit_to_data`` skips it during gradient descent — without
     the wrapper Adam drifts the rows off the orthogonal manifold and sampling
     silently collapses while ``log_prob`` keeps reporting plausible numbers.
     The public ``matrix`` property transparently returns the unwrapped
-    :class:`jax.Array` so downstream code can still do ``rot.matrix @ x``.
+    `jax.Array` so downstream code can still do ``rot.matrix @ x``.
 
     Operates on a single ``(n_dims,)`` event; callers vmap over any batch axis.
 
@@ -177,7 +177,7 @@ class FixedRotation(AbstractBijection):
         - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det = 0
         - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det = 0
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import FixedRotation
@@ -228,7 +228,7 @@ class FixedRotation(AbstractBijection):
             x: Training data of shape ``(n, d)``.
 
         Returns:
-            A :class:`FixedRotation` whose matrix is the PCA rotation of ``x``.
+            A `FixedRotation` whose matrix is the PCA rotation of ``x``.
         """
         x = jnp.asarray(x, dtype=float)
         if x.ndim != 2:

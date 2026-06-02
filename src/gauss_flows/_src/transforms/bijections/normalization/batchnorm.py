@@ -59,7 +59,7 @@ class BatchNorm(AbstractBijection):
         - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
         - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
 
-    Example:
+    Examples:
         >>> import jax
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
@@ -70,22 +70,24 @@ class BatchNorm(AbstractBijection):
         >>> y.shape, log_det.shape
         ((2,), ())
 
-        Training step pattern (per batch)::
+        Training step pattern (per batch):
+        ```python
+        @eqx.filter_value_and_grad
+        def loss_fn(layer, x):
+            _, log_dets = jax.vmap(layer.transform_and_log_det)(x)
+            return -jnp.mean(log_dets)
 
-            @eqx.filter_value_and_grad
-            def loss_fn(layer, x):
-                _, log_dets = jax.vmap(layer.transform_and_log_det)(x)
-                return -jnp.mean(log_dets)
+        bn = bn.with_batch_stats_from_data(batch)           # set source
+        loss, grads = loss_fn(bn, batch)
+        bn = eqx.apply_updates(bn, jax.tree.map(lambda g: -1e-3 * g, grads))
+        bn = bn.update_running_stats_from_batch(batch)      # update EMA
+        ```
 
-            bn = bn.with_batch_stats_from_data(batch)           # set source
-            loss, grads = loss_fn(bn, batch)
-            bn = eqx.apply_updates(bn, jax.tree.map(lambda g: -1e-3 * g, grads))
-            bn = bn.update_running_stats_from_batch(batch)      # update EMA
-
-        Evaluation::
-
-            bn_eval = bn.with_running_average(True)
-            y, _ = jax.vmap(bn_eval.transform_and_log_det)(batch)
+        Evaluation:
+        ```python
+        bn_eval = bn.with_running_average(True)
+        y, _ = jax.vmap(bn_eval.transform_and_log_det)(batch)
+        ```
     """
 
     shape: tuple[int, ...]

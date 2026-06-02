@@ -25,7 +25,7 @@ class HistogramCDF(AbstractBijection):
     "outside the support of the fitted CDF").
 
     The CDF is built from an equal-width histogram and routed through an
-    :class:`interpax.Interpolator1D` per dimension. Two interpolation
+    `interpax.Interpolator1D` per dimension. Two interpolation
     strategies are supported:
 
     - ``method="linear"`` (default): piecewise-linear CDF. Bit-identical to
@@ -64,7 +64,7 @@ class HistogramCDF(AbstractBijection):
         - inverse_and_log_det:   ``(n_dims,)`` in ``[0, 1]`` → ``(n_dims,)``,
           scalar log_det
 
-    Example:
+    Examples:
         Fit and transform on Gaussian data:
 
         >>> import jax.numpy as jnp
@@ -120,7 +120,7 @@ class HistogramCDF(AbstractBijection):
                 estimate the marginal CDFs.
 
         Returns:
-            A new :class:`HistogramCDF` with concrete ``bin_edges``,
+            A new `HistogramCDF` with concrete ``bin_edges``,
             ``bin_pdf``, ``cdf_edges``, and per-dim forward/inverse
             interpolators populated. Idempotent: refitting with the same
             data yields the same fitted parameters.

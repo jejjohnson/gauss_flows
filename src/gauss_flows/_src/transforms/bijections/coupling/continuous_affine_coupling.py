@@ -42,12 +42,12 @@ class ContinuousAffineCoupling(AbstractBijection):
         n_layers: Depth of the conditioner MLP.
         time_net: Optional pre-built gate ``g`` with ``g(0) = 0``. Any
             ``equinox.Module`` with a scalar-in / scalar-out ``__call__`` works
-            — see :class:`gauss_flows.TimeFourier`, :class:`gauss_flows.TimeTanh`,
-            :class:`gauss_flows.TimeIdentity`. When ``None``, a
-            :class:`gauss_flows.TimeFourier` gate is built with
+            — see `gauss_flows.TimeFourier`, `gauss_flows.TimeTanh`,
+            `gauss_flows.TimeIdentity`. When ``None``, a
+            `gauss_flows.TimeFourier` gate is built with
             ``embedding_dim=time_embedding_dim``.
         time_embedding_dim: Number of Fourier features used by the default
-            :class:`gauss_flows.TimeFourier` gate. Ignored when ``time_net`` is
+            `gauss_flows.TimeFourier` gate. Ignored when ``time_net`` is
             provided.
 
     Raises:
@@ -58,9 +58,9 @@ class ContinuousAffineCoupling(AbstractBijection):
         - transform_and_log_det: (dim,) → (dim,), scalar log_det
         - inverse_and_log_det:   (dim,) → (dim,), scalar log_det
         (always takes a ``condition`` of shape ``(1 + control_dim,)`` packed as
-        ``[t, c]`` via :func:`gauss_flows.pack_time_control`)
+        ``[t, c]`` via `gauss_flows.pack_time_control`)
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import ContinuousAffineCoupling, pack_time_control
@@ -158,7 +158,7 @@ class ContinuousAffineCoupling(AbstractBijection):
         Args:
             x: Single event of shape ``(dim,)``.
             condition: Packed ``[t, c]`` of shape ``(1 + control_dim,)`` (build
-                it with :func:`gauss_flows.pack_time_control`). Required.
+                it with `gauss_flows.pack_time_control`). Required.
 
         Returns:
             Tuple ``(y, log_det)`` with ``y`` of shape ``(dim,)`` and a scalar
@@ -186,7 +186,7 @@ class ContinuousAffineCoupling(AbstractBijection):
         Args:
             y: Single event of shape ``(dim,)``.
             condition: Packed ``[t, c]`` of shape ``(1 + control_dim,)`` (build
-                it with :func:`gauss_flows.pack_time_control`). Required.
+                it with `gauss_flows.pack_time_control`). Required.
 
         Returns:
             Tuple ``(x, log_det)`` with ``x`` of shape ``(dim,)`` and a scalar

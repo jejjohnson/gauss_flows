@@ -5,14 +5,14 @@ many-to-one map: deterministic in one direction, stochastic in the other.
 This subpackage ships two families:
 
 **Simple surjections** — pure shape math, no learned encoder/decoder beyond
-an optional fixed conditional distribution: :class:`SimpleAbsSurjection`,
-:class:`SimpleSortSurjection`, :class:`SimpleMaxPoolSurjection2d`. All
+an optional fixed conditional distribution: `SimpleAbsSurjection`,
+`SimpleSortSurjection`, `SimpleMaxPoolSurjection2d`. All
 three are *inference* surjections (deterministic forward, stochastic
 inverse).
 
 **Encoder/decoder surjections** — change event dimensionality, take a
-conditional distribution as a constructor argument: :class:`Slice` (drops
-dims under a decoder), :class:`Augment` (adds dims under an encoder).
+conditional distribution as a constructor argument: `Slice` (drops
+dims under a decoder), `Augment` (adds dims under an encoder).
 
 References:
     Nielsen et al. (2020), *SurVAE Flows*, NeurIPS.

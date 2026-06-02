@@ -1,8 +1,8 @@
 """Inference utilities: NumPyro interop + training loops.
 
-- :mod:`.numpyro_compat` adapts a flowjax ``Transformed`` as a NumPyro distribution.
-- :mod:`.numpyro_guide` plugs that adapter into an ``AutoContinuous`` SVI guide.
-- :mod:`.train` wraps ``flowjax.train.fit_to_data`` with Gaussianization defaults.
+- `.numpyro_compat` adapts a flowjax ``Transformed`` as a NumPyro distribution.
+- `.numpyro_guide` plugs that adapter into an ``AutoContinuous`` SVI guide.
+- `.train` wraps ``flowjax.train.fit_to_data`` with Gaussianization defaults.
 """
 
 from gauss_flows._src.inference.numpyro_compat import FlowDist

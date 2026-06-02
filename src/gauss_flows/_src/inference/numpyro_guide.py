@@ -1,6 +1,6 @@
 """NumPyro guide using Gaussianization flows for SVI.
 
-Provides :class:`FlowGuide`, a variational guide that uses a normalizing flow
+Provides `FlowGuide`, a variational guide that uses a normalizing flow
 as the approximate posterior for Stochastic Variational Inference (SVI).
 """
 
@@ -23,7 +23,7 @@ from gauss_flows._src.inference.numpyro_compat import FlowDist
 class FlowGuide(AutoContinuous):
     """NumPyro variational guide using a Gaussianization flow.
 
-    Subclasses :class:`numpyro.infer.autoguide.AutoContinuous`, using a
+    Subclasses `numpyro.infer.autoguide.AutoContinuous`, using a
     normalizing flow as the variational distribution for SVI. The flow
     models a joint distribution over the concatenated unconstrained latent
     space of the model, so it captures cross-variable correlations because
@@ -36,7 +36,7 @@ class FlowGuide(AutoContinuous):
         flow_factory: Callable that constructs a flowjax ``Transformed``
             distribution. Must accept ``key`` and ``n_dims`` positional /
             keyword arguments, plus any ``flow_kwargs``. Defaults to
-            :func:`~gauss_flows.gaussianization_flow`.
+            `gauss_flows.gaussianization_flow`.
         flow_kwargs: Extra keyword arguments forwarded to ``flow_factory``
             (e.g. ``n_layers``, ``n_components``). Defaults to ``{}``.
         init_key: JAX random key used to initialise the flow parameters.
@@ -46,10 +46,10 @@ class FlowGuide(AutoContinuous):
         prefix: Prefix used for numpyro parameter names. Defaults to
             ``"auto"``.
         init_loc_fn: Per-site initialization strategy. Defaults to
-            :func:`~numpyro.infer.initialization.init_to_uniform`.
+            `numpyro.infer.initialization.init_to_uniform`.
 
-    Example::
-
+    Examples:
+        ```python
         import jax.numpy as jnp
         import jax.random as jr
         import numpyro
@@ -65,6 +65,7 @@ class FlowGuide(AutoContinuous):
         guide = FlowGuide(model)
         svi = SVI(model, guide, Adam(1e-3), loss=Trace_ELBO())
         result = svi.run(jr.key(0), num_steps=100, obs=jnp.array([1.0]))
+        ```
     """
 
     def __init__(

@@ -37,7 +37,7 @@ class StochasticPermutation(AbstractStochastic):
         - Output ``z``: ``shape`` (a permutation of ``x`` along ``axis``)
         - ``log_det``: scalar (shape ``()``)
 
-    Example:
+    Examples:
         Permute a 1D event:
 
         >>> import jax.numpy as jnp

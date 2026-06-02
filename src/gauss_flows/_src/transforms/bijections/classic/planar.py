@@ -1,7 +1,7 @@
 """Planar normalizing flow (Rezende & Mohamed 2015).
 
 No algebraic inverse; use only in the generative / variational-inference
-direction via :meth:`flowjax.distributions.Transformed.sample_and_log_prob`.
+direction via `flowjax.distributions.Transformed.sample_and_log_prob`.
 """
 
 from typing import ClassVar
@@ -24,7 +24,7 @@ class PlanarFlow(AbstractBijection):
 
     The forward map has no closed-form inverse, so this layer is generative-only:
     use it in the sampling / variational-inference direction via
-    :meth:`flowjax.distributions.Transformed.sample_and_log_prob`.
+    `flowjax.distributions.Transformed.sample_and_log_prob`.
 
     Args:
         key: PRNG key used to initialise ``u`` and ``w``.
@@ -41,7 +41,7 @@ class PlanarFlow(AbstractBijection):
         - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
         - inverse_and_log_det:   not implemented (raises)
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import PlanarFlow

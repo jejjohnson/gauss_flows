@@ -39,7 +39,7 @@ class SimpleAbsSurjection(AbstractSurjection):
         - Output ``z``:  ``shape``    (non-negative)
         - ``log_det``:   scalar (shape ``()``)
 
-    Example:
+    Examples:
         Single-event call:
 
         >>> import jax.numpy as jnp

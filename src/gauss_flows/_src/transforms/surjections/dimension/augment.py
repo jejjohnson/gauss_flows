@@ -30,7 +30,7 @@ class Augment(AbstractSurjection):
     structure that would not fit in the data dim alone.
 
     Args:
-        encoder: Object satisfying :class:`ConditionalDistribution` —
+        encoder: Object satisfying `ConditionalDistribution` —
             ``sample(key, *, condition=x)`` must produce arrays of shape
             ``(augment_size,)`` and ``log_prob(value, *, condition=x)`` must
             return a scalar.
@@ -47,7 +47,7 @@ class Augment(AbstractSurjection):
         - Output ``z``:  ``(x_size + augment_size,)``
         - ``log_det``:   scalar (shape ``()``)
 
-    Example:
+    Examples:
         Augment a 2-D data event with a 2-D learned latent:
 
         >>> import jax.numpy as jnp

@@ -35,7 +35,7 @@ class ActNorm(AbstractBijection):
         - transform_and_log_det: ``(..., C)`` → ``(..., C)``, scalar log_det
         - inverse_and_log_det:   ``(..., C)`` → ``(..., C)``, scalar log_det
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import ActNorm
         >>> layer = ActNorm(shape=(4, 4, 3))
@@ -79,7 +79,7 @@ class ActNorm(AbstractBijection):
 class ActNorm1D(AbstractBijection):
     """Activation normalization (ActNorm) for 1-D events.
 
-    The 1-D specialisation of :class:`ActNorm` used inside the coupling-flow
+    The 1-D specialisation of `ActNorm` used inside the coupling-flow
     stack where there are no spatial axes. Applies a per-dimension affine map
     ``y = (x − loc) / scale`` with positive ``scale = softplus(log_scale) +
     1e-5``. Unlike batch normalization, the parameters are learned and not
@@ -95,7 +95,7 @@ class ActNorm1D(AbstractBijection):
         - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
         - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import ActNorm1D
         >>> layer = ActNorm1D(shape=(3,))

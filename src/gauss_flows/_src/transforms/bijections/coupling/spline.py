@@ -15,12 +15,12 @@ class RQSplineCoupling(AbstractBijection):
     ``n_dims // 2`` dims pass through unchanged and feed an inner conditioner
     MLP that emits the knot/derivative parameters of a monotone rational
     quadratic spline applied per-dim to the remaining half. Like
-    :class:`AffineCoupling` but with a far more expressive per-dim
+    `AffineCoupling` but with a far more expressive per-dim
     transformer; with ``cond_dim`` set, the inner MLP additionally consumes
     an external context vector concatenated onto the first-half input.
 
-    Wraps :class:`flowjax.bijections.Coupling` with a
-    :class:`flowjax.bijections.RationalQuadraticSpline` transformer; this
+    Wraps `flowjax.bijections.Coupling` with a
+    `flowjax.bijections.RationalQuadraticSpline` transformer; this
     class adds the convention that an unconditional layer drops any incoming
     ``condition`` so a base-only condition cannot leak into the inner MLP.
 
@@ -43,7 +43,7 @@ class RQSplineCoupling(AbstractBijection):
         - inverse_and_log_det:   (n_dims,) → (n_dims,), scalar log_det
         (with ``cond_dim`` set, also takes a ``condition`` of shape ``(cond_dim,)``)
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import RQSplineCoupling

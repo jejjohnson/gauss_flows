@@ -19,8 +19,8 @@ class AffineCoupling(AbstractBijection):
     With ``cond_dim`` set, the same MLP additionally consumes an external
     context vector concatenated onto the first-half input.
 
-    Wraps :class:`flowjax.bijections.Coupling` with an
-    :class:`flowjax.bijections.affine.Affine` transformer; this class adds the
+    Wraps `flowjax.bijections.Coupling` with an
+    `flowjax.bijections.affine.Affine` transformer; this class adds the
     convention that an unconditional layer (``cond_dim=None``) drops any
     incoming ``condition`` so a base-only condition cannot leak into the inner
     MLP.
@@ -42,7 +42,7 @@ class AffineCoupling(AbstractBijection):
         - inverse_and_log_det:   (n_dims,) → (n_dims,), scalar log_det
         (with ``cond_dim`` set, also takes a ``condition`` of shape ``(cond_dim,)``)
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import AffineCoupling
