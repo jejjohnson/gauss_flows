@@ -28,7 +28,7 @@ class CircularRationalQuadraticSpline(AbstractBijection):
     angular wrap boundary, matching the construction of Rezende et al. 2020,
     *Normalizing Flows on Tori and Spheres*.
 
-    Implementation: wraps :class:`flowjax.bijections.RationalQuadraticSpline` and
+    Implementation: wraps `flowjax.bijections.RationalQuadraticSpline` and
     replaces the ``derivatives`` Parameterize with a tied variant — one fewer
     free parameter than the unconstrained spline.
 
@@ -45,7 +45,7 @@ class CircularRationalQuadraticSpline(AbstractBijection):
         - transform_and_log_det: ``()`` → ``()``, scalar log_det
         - inverse_and_log_det:   ``()`` → ``()``, scalar log_det
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import CircularRationalQuadraticSpline
         >>> t = CircularRationalQuadraticSpline(knots=8)  # bound = π

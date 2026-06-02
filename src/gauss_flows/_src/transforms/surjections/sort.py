@@ -42,7 +42,7 @@ class SimpleSortSurjection(AbstractSurjection):
         - Output ``z``:  ``shape``    (sorted along ``axis``)
         - ``log_det``:   scalar (shape ``()``)
 
-    Example:
+    Examples:
         1D event:
 
         >>> import jax.numpy as jnp

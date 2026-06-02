@@ -1,7 +1,7 @@
 """Sylvester normalizing flow (van den Berg et al. 2018).
 
 No algebraic inverse; use only in the generative / variational-inference
-direction via :meth:`flowjax.distributions.Transformed.sample_and_log_prob`.
+direction via `flowjax.distributions.Transformed.sample_and_log_prob`.
 """
 
 from typing import ClassVar
@@ -17,7 +17,7 @@ from jaxtyping import ArrayLike, PRNGKeyArray
 class SylvesterFlow(AbstractBijection):
     """Sylvester normalizing flow (van den Berg et al. 2018).
 
-    Generalises :class:`PlanarFlow` from a rank-1 to a rank-``M`` (``M ≤ D``)
+    Generalises `PlanarFlow` from a rank-1 to a rank-``M`` (``M ≤ D``)
     perturbation:
 
         ``y = x + Q · R̃ · tanh(R · Qᵀ · x + b)``
@@ -31,7 +31,7 @@ class SylvesterFlow(AbstractBijection):
 
     The forward map has no closed-form inverse, so this layer is generative-only:
     use it in the sampling / variational-inference direction via
-    :meth:`flowjax.distributions.Transformed.sample_and_log_prob`.
+    `flowjax.distributions.Transformed.sample_and_log_prob`.
 
     Args:
         key: PRNG key used to initialise all parameters.
@@ -51,7 +51,7 @@ class SylvesterFlow(AbstractBijection):
         - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
         - inverse_and_log_det:   not implemented (raises)
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import SylvesterFlow
@@ -135,8 +135,8 @@ class SylvesterFlow(AbstractBijection):
         """Materialise ``Q`` as a ``(D, M)`` matrix.
 
         Used by tests to verify orthonormality. The hot path
-        (``transform_and_log_det``) uses :meth:`_q_apply` /
-        :meth:`_q_transpose_apply` and never builds this matrix.
+        (``transform_and_log_det``) uses `_q_apply` /
+        `_q_transpose_apply` and never builds this matrix.
         """
         m = self.householder_vectors.shape[0]
         return jax.vmap(self._q_apply, in_axes=1, out_axes=1)(jnp.eye(m))

@@ -45,7 +45,7 @@ class FFJORD(AbstractBijection):
     over a time span ``[t0, t1]`` using ``diffrax``. The trace term is computed
     either exactly with ``jax.jacfwd`` (cost ``O(dim)`` per ODE step — use for
     small ``dim`` or validation) or stochastically with Hutchinson's identity
-    via :mod:`matfree` (cost ``O(n_hutchinson_samples)`` per step).
+    via `matfree` (cost ``O(n_hutchinson_samples)`` per step).
 
     Hutchinson probes are **fixed per FFJORD instance**: the ``trace_key`` is
     stored once at construction and reused across every call to
@@ -53,14 +53,14 @@ class FFJORD(AbstractBijection):
     internal ODE step. This is the "fixed noise" FFJORD variant (Grathwohl
     et al. 2019, Appendix C) — it makes ``log_det`` a deterministic function
     of parameters and stabilises gradient optimisation. To draw new probes,
-    construct a new :class:`FFJORD` with a freshly split key.
+    construct a new `FFJORD` with a freshly split key.
 
     Args:
         key: PRNG key for the default vector field and Hutchinson probes.
         shape: Event shape ``(dim,)``.
         vector_field: Module with signature
             ``f(ode_time, x, condition) -> dx_dt``. When omitted, a default
-            :class:`gauss_flows.DiffeqMLP` is created.
+            `gauss_flows.DiffeqMLP` is created.
         control_dim: Size of the packed control vector ``c``.
         t_span: Integration interval ``(t0, t1)``.
         solver: ODE solver name.
@@ -77,10 +77,10 @@ class FFJORD(AbstractBijection):
             - ``control_dim == 0``: ``cond_shape = None`` — no condition
               accepted (unconditional FFJORD; diffrax supplies the ODE time).
             - ``control_dim > 0``: ``(1 + control_dim,)`` packed as
-              ``[t_query, c]`` via :func:`gauss_flows.pack_time_control`.
+              ``[t_query, c]`` via `gauss_flows.pack_time_control`.
         - Output ``log_det``: scalar ``()``
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import DiffeqMLP, FFJORD, pack_time_control

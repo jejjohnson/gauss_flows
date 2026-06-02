@@ -48,7 +48,7 @@ class ClassCondDiagGaussian(AbstractDistribution):
         ``ClassCondDiagGaussian(key, n_classes=10, event_shape=(D,),
         learn_mean=False, logscale_factor=3.0)``
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import ClassCondDiagGaussian

@@ -32,7 +32,7 @@ class MixtureGaussianCDF(AbstractBijection):
 
     Use as the marginal block of a Gaussianization / RBIG flow. Construct
     parameters at zero (uniform components) with ``MixtureGaussianCDF(...)``, or
-    data-adapt the means/scales to per-dim quantiles via :meth:`from_data`.
+    data-adapt the means/scales to per-dim quantiles via `from_data`.
 
     Args:
         n_components: Number of mixture components ``K`` per dimension.
@@ -42,7 +42,7 @@ class MixtureGaussianCDF(AbstractBijection):
         - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
         - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import MixtureGaussianCDF
         >>> t = MixtureGaussianCDF(n_components=4, shape=(3,))
@@ -91,7 +91,7 @@ class MixtureGaussianCDF(AbstractBijection):
             n_components: Mixture components ``K``. Defaults to 8.
 
         Returns:
-            A :class:`MixtureGaussianCDF` with data-adapted means/log-scales.
+            A `MixtureGaussianCDF` with data-adapted means/log-scales.
         """
         import numpy as np
         from paramax.utils import inv_softplus
@@ -187,7 +187,7 @@ class MixtureGaussianCDF(AbstractBijection):
 class MixtureLogisticCDF(AbstractBijection):
     """Marginal Gaussianization via a mixture-of-logistics CDF.
 
-    Identical in structure to :class:`MixtureGaussianCDF` but each per-dim
+    Identical in structure to `MixtureGaussianCDF` but each per-dim
     mixture component is logistic rather than Gaussian: the component CDF is the
     sigmoid ``σ((x − μ) / s)``. Maps each dimension through its logistic-mixture
     CDF (→ uniform on ``[0, 1]``) then through the inverse normal CDF (probit).
@@ -203,7 +203,7 @@ class MixtureLogisticCDF(AbstractBijection):
         - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
         - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import MixtureLogisticCDF
         >>> t = MixtureLogisticCDF(n_components=4, shape=(3,))

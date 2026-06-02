@@ -36,7 +36,7 @@ class Squeeze(AbstractBijection):
         - transform_and_log_det: ``shape`` → ``out_shape``, scalar log_det (0)
         - inverse_and_log_det:   ``out_shape`` → ``shape``, scalar log_det (0)
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import Squeeze
         >>> layer = Squeeze(shape=(4, 3))

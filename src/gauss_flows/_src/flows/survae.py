@@ -27,7 +27,7 @@ def _to_data(
     direction (its "sample" side), while SurVAE's
     ``AbstractSurjection.inverse_and_log_det`` is the latent -> data
     direction (latent ≡ base). The isinstance dispatch hides this so
-    :class:`SurVAEFlow` keeps a uniform call site without wrapping
+    `SurVAEFlow` keeps a uniform call site without wrapping
     bijections in adapters.
     """
     if isinstance(transform, AbstractBijection):
@@ -43,7 +43,7 @@ def _to_base(
 ) -> tuple[Array, Array]:
     """Apply one chain element in the data -> base direction (used by ``log_prob``).
 
-    Mirror of :func:`_to_data`: bijections use ``inverse_and_log_det``
+    Mirror of `_to_data`: bijections use ``inverse_and_log_det``
     (FlowJax's "log_prob" side), surjections use ``forward_and_log_det``
     (SurVAE's data -> latent side).
     """
@@ -55,20 +55,20 @@ def _to_base(
 class SurVAEFlow(eqx.Module):
     """Container that threads PRNG keys through a mixed bijection / surjection chain.
 
-    Composes any sequence of :class:`flowjax.bijections.AbstractBijection` and
-    :class:`AbstractSurjection` transforms. Forward direction is base -> data
+    Composes any sequence of `flowjax.bijections.AbstractBijection` and
+    `AbstractSurjection` transforms. Forward direction is base -> data
     (used by ``sample``); inverse direction is data -> base (used by
     ``log_prob``). Each transform receives its own independent split of the
     user-supplied key, regardless of whether it actually consumes it — this
     keeps the call shape uniform and JIT-friendly.
 
-    For a chain consisting solely of :class:`AbstractBijection` instances,
+    For a chain consisting solely of `AbstractBijection` instances,
     ``log_prob`` is identical (up to numerical noise) to that of the
     equivalent ``flowjax.distributions.Transformed(base, Chain(transforms))``,
     so users can migrate without changing semantics.
 
     Attributes:
-        base_dist: A :class:`flowjax.distributions.AbstractDistribution`
+        base_dist: A `flowjax.distributions.AbstractDistribution`
             whose event shape matches the start of the forward chain.
         transforms: Tuple of bijections / surjections, applied left-to-right
             in the forward direction.
@@ -76,8 +76,8 @@ class SurVAEFlow(eqx.Module):
             input to ``log_prob``). Defaults to ``base_dist.shape`` for
             shape-preserving chains; **must** be supplied explicitly when
             the chain contains a surjection that changes dimensionality
-            (e.g. :class:`Slice`, :class:`Augment`,
-            :class:`SimpleMaxPoolSurjection2d`).
+            (e.g. `Slice`, `Augment`,
+            `SimpleMaxPoolSurjection2d`).
 
     Properties:
         lower_bound: ``True`` iff at least one surjection in the chain
@@ -93,13 +93,13 @@ class SurVAEFlow(eqx.Module):
         drive any subset of {base, couplings, FiLM-wrapped layers} —
         including:
 
-        - **base only**: pair a :class:`ConditionalDiagGaussian` /
-          :class:`ClassCondDiagGaussian` / :class:`NumpyroBase` (factory
+        - **base only**: pair a `ConditionalDiagGaussian` /
+          `ClassCondDiagGaussian` / `NumpyroBase` (factory
           mode) base with otherwise unconditional transforms.
         - **transforms only**: pair an unconditional base
-          (:class:`flowjax.distributions.Normal`, …) with one or more
+          (`flowjax.distributions.Normal`, …) with one or more
           coupling layers built with ``cond_dim > 0`` (or any transform
-          wrapped in :class:`Conditioner`).
+          wrapped in `Conditioner`).
         - **both**: a conditional base **and** condition-aware transforms;
           the same ``condition`` reaches both.
 
@@ -117,7 +117,7 @@ class SurVAEFlow(eqx.Module):
         - ``log_prob(x, key, condition)``: ``x`` of shape
           ``sample_shape + data_shape`` → ``sample_shape``
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from flowjax.distributions import Normal
@@ -184,7 +184,7 @@ class SurVAEFlow(eqx.Module):
         """Sample by drawing from ``base_dist`` and pushing through to data.
 
         Each draw uses an independent key derived from ``key``; ``sample_shape``
-        is realised via :func:`jax.vmap` over a leading batch of keys, mirroring
+        is realised via `jax.vmap` over a leading batch of keys, mirroring
         the FlowJax convention.
         """
         cond = None if condition is None else jnp.asarray(condition)

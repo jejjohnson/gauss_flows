@@ -17,28 +17,30 @@ class Conditioner(AbstractBijection):
 
     Computes
 
-    .. math:: y = \\exp(\\log\\sigma(c)) \\cdot f(x) + \\mu(c)
+    $$
+    y = \\exp(\\log\\sigma(c)) \\cdot f(x) + \\mu(c)
+    $$
 
     where ``f`` is the inner bijection and
     ``(\\mu, \\log\\sigma) = \\text{split}(g(c))`` are produced by a single
-    user-supplied (or default :class:`equinox.nn.MLP`) network with
+    user-supplied (or default `equinox.nn.MLP`) network with
     ``2 * D`` outputs — same coupling-net pattern used by
-    :class:`AffineCoupling` and :class:`ConditionalDiagGaussian`.
+    `AffineCoupling` and `ConditionalDiagGaussian`.
 
     Use this for transforms that genuinely cannot accept a condition
     (rotations, normalisations, fixed orthogonal layers, …). For coupling
     layers and other transforms that natively take a condition, pass
-    ``cond_dim`` directly rather than wrapping in :class:`Conditioner`.
+    ``cond_dim`` directly rather than wrapping in `Conditioner`.
 
     Args:
-        key: PRNG key used to initialise the default :class:`equinox.nn.MLP`.
+        key: PRNG key used to initialise the default `equinox.nn.MLP`.
             Ignored when a pre-built ``context_net`` is supplied.
         inner: Any bijection whose ``cond_shape`` is ``None``. Strict — wrap
             only genuinely unconditional inner transforms; raise otherwise.
         cond_shape: Context shape ``(cond_dim,)``. 1-D only.
         context_net: Optional pre-built callable
             ``(cond_dim,) -> (2 * D,)``. Default builds an
-            :class:`equinox.nn.MLP`.
+            `equinox.nn.MLP`.
         nn_width: Width of the default MLP.
         nn_depth: Depth of the default MLP.
         activation: Activation between hidden layers of the default MLP.
@@ -48,7 +50,7 @@ class Conditioner(AbstractBijection):
         - Condition: ``(cond_dim,)``
         - ``log_det``: scalar ``()``
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import Conditioner, OrthogonalRotation

@@ -27,12 +27,12 @@ class CircularRQSplineCoupling(AbstractBijection):
     Implements the construction of Rezende et al. 2020 for densities on the
     n-torus. **All input dims are assumed periodic** with period ``2·bound``.
     For mixed periodic/linear inputs, compose this with a regular
-    :class:`RQSplineCoupling` via ``flowjax.bijections.Chain``.
+    `RQSplineCoupling` via ``flowjax.bijections.Chain``.
 
     Two ingredients combine to make the resulting log-density continuous across
     the wrap join:
 
-    1. The per-dim transformer is :class:`CircularRationalQuadraticSpline`
+    1. The per-dim transformer is `CircularRationalQuadraticSpline`
        (tied endpoint derivatives → C¹ across the join).
     2. The conditioner sees ``[sin(x_cond), cos(x_cond)]`` features rather than
        raw angles, so it cannot distinguish ``-π+ε`` from ``+π-ε``.
@@ -63,7 +63,7 @@ class CircularRQSplineCoupling(AbstractBijection):
         - transform_and_log_det: (n_dims,) → (n_dims,), scalar log_det
         - inverse_and_log_det:   (n_dims,) → (n_dims,), scalar log_det
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import CircularRQSplineCoupling

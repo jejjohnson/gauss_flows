@@ -16,7 +16,7 @@ from jaxtyping import PRNGKeyArray
 class FlowDist(dist_lib.Distribution):
     """Wrap a flowjax ``Transformed`` distribution as a NumPyro distribution.
 
-    Subclasses :class:`numpyro.distributions.Distribution`, delegating
+    Subclasses `numpyro.distributions.Distribution`, delegating
     ``sample`` and ``log_prob`` to the wrapped flow. This lets
     Gaussianization flows (and other flowjax distributions) be used
     directly in NumPyro probabilistic programs with standard MCMC or
@@ -27,7 +27,7 @@ class FlowDist(dist_lib.Distribution):
     Args:
         flow: A flowjax ``Transformed`` distribution.
 
-    Example:
+    Examples:
         >>> import jax.random as jr
         >>> from gauss_flows import gaussianization_flow, FlowDist
         >>> flow = gaussianization_flow(jr.key(0), n_dims=2)

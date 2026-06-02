@@ -1,6 +1,6 @@
 """Trainable Gaussian mixture base distribution.
 
-Natural companion to :class:`MixtureGaussianCDF` (the marginal transform):
+Natural companion to `MixtureGaussianCDF` (the marginal transform):
 provides a joint multi-modal base for Gaussianization pipelines on targets
 that are multi-modal or fat-tailed.
 """
@@ -31,7 +31,7 @@ class GaussianMixture(AbstractDistribution):
     one (a per-component lower-triangular Cholesky factor).
 
     Use as a flow base when the Gaussianized target is multi-modal or
-    fat-tailed — the natural companion to :class:`MixtureGaussianCDF`,
+    fat-tailed — the natural companion to `MixtureGaussianCDF`,
     the per-dimension marginal transform.
 
     Args:
@@ -55,7 +55,7 @@ class GaussianMixture(AbstractDistribution):
         - log_prob: ``(D,)`` → scalar    (batch via vmap / leading axes)
         - sample:   ``(key, sample_shape)`` → ``(*sample_shape, D)``
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import GaussianMixture

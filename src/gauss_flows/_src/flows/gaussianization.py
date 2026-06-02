@@ -38,8 +38,8 @@ def gaussianization_flow(
     LU-parametrised linear). Mixture means and Householder vectors are
     randomly initialised to break symmetry so gradient training has a
     signal to separate the components. The block stack is composed with a
-    memory-efficient :class:`flowjax.bijections.Scan` and wrapped in a
-    base :class:`~flowjax.distributions.Normal`.
+    memory-efficient `flowjax.bijections.Scan` and wrapped in a
+    base `flowjax.distributions.Normal`.
 
     Args:
         key: JAX random key.
@@ -63,7 +63,7 @@ def gaussianization_flow(
         ValueError: If ``base_dist`` has the wrong event shape, is
             conditional, or ``rotation`` is not a recognised name.
 
-    Example:
+    Examples:
         >>> import jax.random as jr
         >>> from gauss_flows import gaussianization_flow
         >>> flow = gaussianization_flow(jr.key(0), n_dims=4, n_layers=4, n_components=8)
@@ -136,13 +136,13 @@ def coupling_gaussianization_flow(
 
     Stacks ``n_layers`` alternating C∘P blocks, where each block is a
     rational-quadratic-spline coupling layer C followed by a permutation P
-    (a :class:`~flowjax.bijections.Flip` for ``n_dims == 2``, a random
-    :class:`~flowjax.bijections.Permute` otherwise; no permutation for
-    ``n_dims == 1``). Unlike :func:`gaussianization_flow`, the coupling
+    (a `flowjax.bijections.Flip` for ``n_dims == 2``, a random
+    `flowjax.bijections.Permute` otherwise; no permutation for
+    ``n_dims == 1``). Unlike `gaussianization_flow`, the coupling
     conditioner lets each layer represent non-linear, cross-coordinate
     transformations. The block stack is composed with
-    :class:`flowjax.bijections.Scan` and wrapped in a base
-    :class:`~flowjax.distributions.Normal`.
+    `flowjax.bijections.Scan` and wrapped in a base
+    `flowjax.distributions.Normal`.
 
     Args:
         key: JAX random key.
@@ -158,7 +158,7 @@ def coupling_gaussianization_flow(
     Returns:
         A flowjax ``Transformed`` distribution with ``log_prob`` and ``sample``.
 
-    Example:
+    Examples:
         >>> import jax.random as jr
         >>> from gauss_flows import coupling_gaussianization_flow
         >>> flow = coupling_gaussianization_flow(jr.key(0), n_dims=4, n_layers=2)

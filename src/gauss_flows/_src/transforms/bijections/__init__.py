@@ -3,14 +3,14 @@
 Subpackages group bijections by technique so the hierarchy mirrors the
 SurVAE taxonomy:
 
-- :mod:`.coupling` — masked-conditioner couplings.
-- :mod:`.continuous` — ODE-defined continuous normalizing flows.
-- :mod:`.elementwise` — pointwise CDF / spline layers that act on each dim.
-- :mod:`.linear` — matrix-shaped layers: rotations, LU, 1×1 conv, conv-exp.
-- :mod:`.normalization` — ActNorm + invertible BatchNorm.
-- :mod:`.reshape` — volume-preserving shape rewriters (Squeeze).
-- :mod:`.periodic` — wrap / shift primitives on the torus.
-- :mod:`.classic` — low-expressivity VI-only flows (Planar, Sylvester).
+- `.coupling` — masked-conditioner couplings.
+- `.continuous` — ODE-defined continuous normalizing flows.
+- `.elementwise` — pointwise CDF / spline layers that act on each dim.
+- `.linear` — matrix-shaped layers: rotations, LU, 1×1 conv, conv-exp.
+- `.normalization` — ActNorm + invertible BatchNorm.
+- `.reshape` — volume-preserving shape rewriters (Squeeze).
+- `.periodic` — wrap / shift primitives on the torus.
+- `.classic` — low-expressivity VI-only flows (Planar, Sylvester).
 """
 
 from __future__ import annotations

@@ -112,7 +112,7 @@ class DiffeqMLP(eqx.Module):
           ``control_dim == 0``
         - Output: ``(dim,)``
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import DiffeqMLP, pack_time_control
@@ -178,7 +178,7 @@ class DiffeqConcat(eqx.Module):
 
     This variant replaces the raw ODE time with ``time_net(ode_time)`` before
     concatenation, while preserving the same packed-condition API as
-    :class:`DiffeqMLP`.
+    `DiffeqMLP`.
 
     Args:
         key: PRNG key for the MLP and default time net.
@@ -186,7 +186,7 @@ class DiffeqConcat(eqx.Module):
         control_dim: Size of the optional control vector ``c``.
         hidden: Hidden-layer widths.
         time_net: Optional scalar time embedding. When omitted, a
-            :class:`gauss_flows.TimeFourier` module is created.
+            `gauss_flows.TimeFourier` module is created.
         activation: Non-linearity applied after each hidden layer.
 
     Shape:
@@ -196,7 +196,7 @@ class DiffeqConcat(eqx.Module):
           ``control_dim == 0``
         - Output: ``(dim,)``
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import DiffeqConcat, pack_time_control

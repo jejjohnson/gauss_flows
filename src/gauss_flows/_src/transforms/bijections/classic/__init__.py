@@ -4,7 +4,7 @@ Both transforms predate coupling and spline flows. They are useful as
 teaching baselines and as variational-inference-only flows: they have no
 algebraic inverse, so they can be used to sample from ``base -> data`` but
 cannot evaluate ``log_prob`` on arbitrary points. Use
-:meth:`flowjax.distributions.Transformed.sample_and_log_prob` in the VI
+`flowjax.distributions.Transformed.sample_and_log_prob` in the VI
 setting.
 
 References:

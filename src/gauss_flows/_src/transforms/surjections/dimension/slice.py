@@ -30,7 +30,7 @@ class Slice(AbstractSurjection):
 
     Args:
         keep_dims: Number of leading entries to keep. Must be positive.
-        decoder: Object satisfying :class:`ConditionalDistribution` —
+        decoder: Object satisfying `ConditionalDistribution` —
             ``sample(key, *, condition=z)`` must produce arrays of shape
             ``(D − keep_dims,)`` for the dropped tail and
             ``log_prob(value, *, condition=z)`` must return a scalar.
@@ -45,9 +45,9 @@ class Slice(AbstractSurjection):
         attribute. Its forward-input dim ``D`` is determined by whatever the
         upstream transform produces — it is a chain-context property, not a
         constructor parameter, so there is no fixed ``shape`` to declare. The
-        full data shape lives on :class:`SurVAEFlow.data_shape` instead.
+        full data shape lives on `SurVAEFlow.data_shape` instead.
 
-    Example:
+    Examples:
         Score the dropped tail under a unit Gaussian decoder:
 
         >>> import jax.numpy as jnp
@@ -109,7 +109,7 @@ class Slice(AbstractSurjection):
         """Sample the missing tail from the decoder; concat back.
 
         Returns ``log q(dropped_sampled | z)`` to mirror
-        ``forward_and_log_det`` and match :class:`SimpleMaxPoolSurjection2d`'s
+        ``forward_and_log_det`` and match `SimpleMaxPoolSurjection2d`'s
         inverse convention. ``SurVAEFlow.log_prob`` doesn't consume this value
         (it only uses ``forward_and_log_det``); the consistent return shape is
         for callers using the inverse standalone (e.g. ELBO computations).

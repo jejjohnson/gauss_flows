@@ -18,11 +18,11 @@ from gauss_flows._src.transforms.base import AbstractSurjection
 
 
 class ClassCondFlow(eqx.Module):
-    """Class-conditional flow built on a :class:`ClassCondDiagGaussian` base.
+    """Class-conditional flow built on a `ClassCondDiagGaussian` base.
 
-    A thin convenience wrapper around :class:`SurVAEFlow` that:
+    A thin convenience wrapper around `SurVAEFlow` that:
 
-    - constructs a :class:`ClassCondDiagGaussian` base with the given
+    - constructs a `ClassCondDiagGaussian` base with the given
       ``n_classes`` and ``event_shape``;
     - exposes a ``label`` keyword in its public API (instead of the more
       generic ``condition``) for ergonomics in the class-conditional case;
@@ -34,7 +34,7 @@ class ClassCondFlow(eqx.Module):
     condition that the base requires for index lookup), which is incompatible
     with the ``(cond_dim,)``-shaped condition that conditional couplings
     expect. If you want conditional transforms in addition to a class-
-    conditional base, build a :class:`SurVAEFlow` directly and pack a
+    conditional base, build a `SurVAEFlow` directly and pack a
     label-derived feature vector (e.g. one-hot) into a custom condition;
     this wrapper deliberately does not support that to keep the contract
     simple.
@@ -46,14 +46,14 @@ class ClassCondFlow(eqx.Module):
         transforms: Sequence of unconditional bijections / surjections,
             applied left-to-right in the base→data direction. Conditional
             transforms (``cond_shape != None``) are rejected at construction.
-        learn_mean: Forwarded to :class:`ClassCondDiagGaussian`.
-        logscale_factor: Forwarded to :class:`ClassCondDiagGaussian`.
+        learn_mean: Forwarded to `ClassCondDiagGaussian`.
+        logscale_factor: Forwarded to `ClassCondDiagGaussian`.
 
     Shape:
         - ``label``: scalar int (``cond_shape == ()``)
         - ``x`` / ``y``: ``event_shape``
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import ClassCondFlow, AffineCoupling

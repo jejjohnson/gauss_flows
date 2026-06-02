@@ -1,7 +1,7 @@
 """Marginal rational quadratic spline bijection.
 
 Applies a per-dim RQ spline independently — the elementwise counterpart
-of :class:`RQSplineCoupling`.
+of `RQSplineCoupling`.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ class RQSplineMarginal(AbstractBijection):
 
     Applies a monotonic rational-quadratic spline (Durkan et al. 2019,
     *Neural Spline Flows*) independently to each dimension — the elementwise
-    counterpart of :class:`RQSplineCoupling`. Each dim gets its own ``n_bins``
+    counterpart of `RQSplineCoupling`. Each dim gets its own ``n_bins``
     knots over the symmetric interval ``[−interval, interval]``; outside that
     interval the map is the identity (linear tails). Inputs should lie within
     the interval for the spline to act non-trivially.
@@ -33,7 +33,7 @@ class RQSplineMarginal(AbstractBijection):
         - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
         - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import RQSplineMarginal
         >>> t = RQSplineMarginal(n_bins=8, shape=(3,), interval=5.0)

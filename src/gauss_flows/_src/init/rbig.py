@@ -2,17 +2,17 @@
 
 These functions return a fully-configured flow by greedily fitting each
 block to the data (non-gradient), then wrapping the stack into a
-:class:`flowjax.distributions.Transformed`. The result is already a
+`flowjax.distributions.Transformed`. The result is already a
 reasonable density estimator before any gradient training, and can be
 refined further by the usual NLL minimisation.
 
 Two variants:
 
-- :func:`fit_rbig` — the canonical diagonal flow: alternating PCA rotation
+- `fit_rbig` — the canonical diagonal flow: alternating PCA rotation
   and per-dim mixture-of-Gaussians CDF Gaussianization. Mirrors the
   Laparra & Malo (2011) RBIG algorithm.
-- :func:`fit_rbig_coupling` — warm-start for a coupling-based flow:
-  each block is rotation + :class:`MixtureGaussianCDFCoupling` where the
+- `fit_rbig_coupling` — warm-start for a coupling-based flow:
+  each block is rotation + `MixtureGaussianCDFCoupling` where the
   conditioner is initialised so the layer acts like a diagonal mixture
   Gaussianization on the transformed half. Training then lets the
   conditioner learn to modulate on the untransformed half.
@@ -69,10 +69,10 @@ def _fit_marginal(
     block_idx: int,
     random_state: int,
 ) -> MixtureGaussianCDF:
-    """Build a :class:`MixtureGaussianCDF` with per-dim GMM-fitted params.
+    """Build a `MixtureGaussianCDF` with per-dim GMM-fitted params.
 
     Translates sklearn's ``(weights, means, scales)`` into the
-    :class:`MixtureGaussianCDF` convention, where the stored
+    `MixtureGaussianCDF` convention, where the stored
     ``log_weights``, ``means``, ``log_scales`` are used as
     ``softmax(log_weights)`` and ``softplus(log_scales) + 5e-3`` at
     forward time.
@@ -125,10 +125,10 @@ def fit_rbig(
     the current data state — a per-dimension sklearn ``GaussianMixture``
     EM fit, no gradient training — and propagating the data forward
     before the next block. The result is a warm start: a
-    :class:`flowjax.distributions.Transformed` whose ``log_prob`` is
+    `flowjax.distributions.Transformed` whose ``log_prob`` is
     already a reasonable density estimator and can be refined further by
     the usual NLL minimisation (see
-    :func:`~gauss_flows.fit_gaussianization_flow`).
+    `gauss_flows.fit_gaussianization_flow`).
 
     Args:
         x: Training data of shape ``(n, d)``.
@@ -145,7 +145,7 @@ def fit_rbig(
     Raises:
         ValueError: If ``x`` is not 2-D.
 
-    Example:
+    Examples:
         >>> import jax.random as jr
         >>> from gauss_flows import fit_rbig
         >>> x = jr.normal(jr.key(0), (500, 2))
@@ -181,7 +181,7 @@ def _pack_coupling_bias(
 ) -> np.ndarray:
     """Flatten per-b-dim mixture params into the conditioner's bias vector.
 
-    :class:`flowjax.bijections.Coupling` reshapes the conditioner output
+    `flowjax.bijections.Coupling` reshapes the conditioner output
     as ``(d_b, params_per_dim)`` and feeds each row through
     ``transformer_constructor``. The ravelled transformer has three
     inexact-array fields in declaration order: ``logits``, ``means``,
@@ -218,8 +218,8 @@ def _push_forward_b_half_diag(
 ) -> np.ndarray:
     """Advance state via the ``MixtureGaussianCDF`` forward on ``y[:, b_idx]``.
 
-    Used by :func:`fit_rbig_coupling` to propagate state between blocks
-    along the *same* numerical path as :func:`fit_rbig`, so the two warm
+    Used by `fit_rbig_coupling` to propagate state between blocks
+    along the *same* numerical path as `fit_rbig`, so the two warm
     starts see identical ``y`` states at every block and their GMM fits
     agree exactly. Without this, each coupling's slightly different
     numerical forward (different log-pdf formula, different scale
@@ -358,11 +358,11 @@ def fit_rbig_coupling(
     Each block is ``[FixedRotation (PCA), MixtureGaussianCDFCoupling]``.
     The coupling's conditioner is initialised in closed form — no gradient
     training — with a zero kernel and a bias set from per-b-dim sklearn
-    ``GaussianMixture`` fits (via :func:`_init_coupling_from_fits`), so
+    ``GaussianMixture`` fits (via `_init_coupling_from_fits`), so
     the layer starts as a constant-in-``x_a`` mixture-CDF transform on the
     ``x_b`` half — numerically equivalent to a diagonal marginal fit on
     the ``x_b`` dims. Gradient training (see
-    :func:`~gauss_flows.fit_gaussianization_flow`) can then break the
+    `gauss_flows.fit_gaussianization_flow`) can then break the
     constancy and let the conditioner modulate on ``x_a``.
 
     Args:
@@ -383,7 +383,7 @@ def fit_rbig_coupling(
         ValueError: If ``x`` is not 2-D, or ``d`` is less than 2 or odd
             (the half-swap coupling pair requires an even number of dims).
 
-    Example:
+    Examples:
         >>> import jax.random as jr
         >>> from gauss_flows import fit_rbig_coupling
         >>> x = jr.normal(jr.key(0), (500, 2))

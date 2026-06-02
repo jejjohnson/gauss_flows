@@ -1,7 +1,7 @@
 """Probabilistic-PCA base distribution (low-rank + diagonal Gaussian).
 
 Parameterises ``Sigma = W W^T + sigma^2 I`` with ``W in R^{D x K}`` via
-:class:`GaussianPCA`. ``O(DK)`` parameters and ``O(DK)`` sampling via the
+`GaussianPCA`. ``O(DK)`` parameters and ``O(DK)`` sampling via the
 reparametrisation ``x = loc + W z + sigma eps``. Log-prob uses the
 Woodbury identity / matrix-determinant lemma so inversion and
 log-determinant stay ``O(K^3)`` + ``O(DK)`` rather than ``O(D^3)``.
@@ -54,7 +54,7 @@ class GaussianPCA(AbstractDistribution):
         - log_prob: ``(D,)`` → scalar    (batch via vmap / leading axes)
         - sample:   ``(key, sample_shape)`` → ``(*sample_shape, D)``
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import GaussianPCA

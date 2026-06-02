@@ -34,7 +34,7 @@ class Invertible1x1Conv(AbstractBijection):
         - transform_and_log_det: ``(n_channels,)`` → ``(n_channels,)``, scalar log_det
         - inverse_and_log_det:   ``(n_channels,)`` → ``(n_channels,)``, scalar log_det
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import Invertible1x1Conv

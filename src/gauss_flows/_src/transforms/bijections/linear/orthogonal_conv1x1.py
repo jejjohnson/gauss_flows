@@ -22,10 +22,10 @@ class Orthogonal1x1Conv(AbstractBijection):
     ``y = Q·x``; the inverse is ``x = Q.T·y``; ``log|det Q| = 0`` (volume-
     preserving). Callers that operate on ``(H, W, C)`` image events should
     vmap externally — this matches the single-event convention shared with
-    :class:`Invertible1x1Conv` and the rest of the package (see
+    `Invertible1x1Conv` and the rest of the package (see
     ``CLAUDE.md``).
 
-    **Learnable path** (default): delegates to :class:`OrthogonalRotation`'s
+    **Learnable path** (default): delegates to `OrthogonalRotation`'s
     Cayley parameterisation ``Q = (I − A)(I + A)^{-1}`` with skew-symmetric
     ``A``. Unlike ``OrthogonalRotation``'s zero init (which starts at
     ``Q = I``), this class re-initialises the skew parameters with small
@@ -35,29 +35,30 @@ class Orthogonal1x1Conv(AbstractBijection):
 
     **Fixed path** (``fixed_matrix`` supplied): holds Q constant at the
     supplied matrix. ``fixed_matrix`` is wrapped in
-    :class:`paramax.NonTrainable` so the standard flowjax training loops
+    `paramax.NonTrainable` so the standard flowjax training loops
     (``flowjax.train.fit_to_data`` and friends) and any
     ``eqx.filter(model, eqx.is_inexact_array)``-based optimizer-filter
     combined with ``paramax.unwrap`` treat the matrix as frozen; the
     wrapper also applies ``jax.lax.stop_gradient`` to the inner array
-    every time :meth:`_get_rotation_matrix` unwraps the module.
+    every time `_get_rotation_matrix` unwraps the module.
 
-    .. warning::
+    !!! warning
         **Decoupled weight decay bypasses `NonTrainable`.** Optimizers that
         update parameters from the parameter *value* (e.g. ``optax.adamw``
         with a non-zero ``weight_decay``) will still drift ``fixed_matrix``
         away from orthogonality because weight decay does not go through
         the gradient path. To keep ``fixed_matrix`` bit-identical under
         ``adamw``-style training, partition it out of the optimizer state
-        before updating::
-
-            trainable, frozen = eqx.partition(
-                model,
-                lambda leaf: eqx.is_inexact_array(leaf)
-                and not isinstance(leaf, paramax.NonTrainable),
-                is_leaf=lambda leaf: isinstance(leaf, paramax.NonTrainable),
-            )
-            # optimize `trainable`, recombine with `frozen` at step end.
+        before updating:
+        ```python
+        trainable, frozen = eqx.partition(
+            model,
+            lambda leaf: eqx.is_inexact_array(leaf)
+            and not isinstance(leaf, paramax.NonTrainable),
+            is_leaf=lambda leaf: isinstance(leaf, paramax.NonTrainable),
+        )
+        # optimize `trainable`, recombine with `frozen` at step end.
+        ```
 
     Args:
         key: PRNG key used for learnable Cayley initialisation. Ignored
@@ -82,16 +83,16 @@ class Orthogonal1x1Conv(AbstractBijection):
 
     Note:
         The public surface is a superset of
-        :class:`OrthogonalRotation`: the learnable path produces the same
+        `OrthogonalRotation`: the learnable path produces the same
         family of orthogonal matrices (same ``skew_params`` shape, same
         Cayley map), with a more flow-literature-friendly name and a
         genuinely-fixed alternative branch. Prefer
-        :class:`OrthogonalRotation` if you want the exact zero-init
+        `OrthogonalRotation` if you want the exact zero-init
         (``Q = I`` at step 0) used by classic RBIG flows; prefer this
         class when small-random init or a pre-computed fixed rotation is
         wanted.
 
-    Example:
+    Examples:
         Learnable (Cayley-parameterised, near-identity init):
 
         >>> import jax.numpy as jnp

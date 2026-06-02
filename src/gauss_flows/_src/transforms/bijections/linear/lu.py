@@ -17,7 +17,7 @@ class LULinearPermute(AbstractBijection):
     positive diagonal (parameterised as ``exp(log_diag)``). The log-absolute
     determinant reduces to ``sum(log_diag)``, avoiding an explicit Jacobian.
 
-    Cheaper than :class:`OrthogonalRotation` in the relevant regime (no Cayley
+    Cheaper than `OrthogonalRotation` in the relevant regime (no Cayley
     solve at forward / inverse time) and widely used as the mixing layer in
     Neural Spline Flows (Durkan et al. 2019, *Neural Spline Flows*).
 
@@ -36,7 +36,7 @@ class LULinearPermute(AbstractBijection):
         - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
         - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import LULinearPermute
         >>> t = LULinearPermute(shape=(3,))  # reverse permutation

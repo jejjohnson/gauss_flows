@@ -126,7 +126,7 @@ class UniformOnSphere(AbstractDistribution):
         - log_prob: ``(d+1,)`` → scalar    (batch via vmap / leading axes)
         - sample:   ``(key, sample_shape)`` → ``(*sample_shape, d+1)``
 
-    Example:
+    Examples:
         >>> import jax.random as jr
         >>> from gauss_flows import UniformOnSphere
         >>> dist = UniformOnSphere(d=2)
@@ -162,7 +162,7 @@ class VonMisesFisher(AbstractDistribution):
 
     Density ``p(x) ∝ exp(κ · μᵀx)`` on the sphere: the spherical analogue of
     an isotropic Gaussian, peaked at the mean direction ``μ`` with
-    concentration ``κ`` (``κ = 0`` recovers :class:`UniformOnSphere`). The
+    concentration ``κ`` (``κ = 0`` recovers `UniformOnSphere`). The
     normaliser involves a modified Bessel function ``I_ν(κ)``, evaluated
     here via a hybrid power-series / asymptotic expansion. Sampling uses
     Wood's (1994) rejection scheme. Useful as a flow base for concentrated
@@ -183,7 +183,7 @@ class VonMisesFisher(AbstractDistribution):
         - log_prob: ``(d+1,)`` → scalar    (batch via vmap / leading axes)
         - sample:   ``(key, sample_shape)`` → ``(*sample_shape, d+1)``
 
-    Example:
+    Examples:
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import VonMisesFisher
