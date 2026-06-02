@@ -50,11 +50,15 @@ class ContinuousAffineCoupling(AbstractBijection):
             :class:`gauss_flows.TimeFourier` gate. Ignored when ``time_net`` is
             provided.
 
+    Raises:
+        ValueError: If ``shape`` is not 1D, ``dim < 2``, or ``control_dim`` is
+            negative.
+
     Shape:
-        - Input ``x``: ``(dim,)``
-        - Condition: ``(1 + control_dim,)`` packed as ``[t, c]``
-        - Output ``y``: ``(dim,)``
-        - ``log_det``: scalar ``()``
+        - transform_and_log_det: (dim,) → (dim,), scalar log_det
+        - inverse_and_log_det:   (dim,) → (dim,), scalar log_det
+        (always takes a ``condition`` of shape ``(1 + control_dim,)`` packed as
+        ``[t, c]`` via :func:`gauss_flows.pack_time_control`)
 
     Example:
         >>> import jax.numpy as jnp
@@ -149,6 +153,20 @@ class ContinuousAffineCoupling(AbstractBijection):
         x: ArrayLike,
         condition: ArrayLike | None = None,
     ) -> tuple[Array, Array]:
+        """Forward map ``x → y`` and its scalar log-determinant.
+
+        Args:
+            x: Single event of shape ``(dim,)``.
+            condition: Packed ``[t, c]`` of shape ``(1 + control_dim,)`` (build
+                it with :func:`gauss_flows.pack_time_control`). Required.
+
+        Returns:
+            Tuple ``(y, log_det)`` with ``y`` of shape ``(dim,)`` and a scalar
+            ``log_det``.
+
+        Raises:
+            ValueError: If ``condition`` is ``None``.
+        """
         x = jnp.asarray(x)
         passive = x[: self.untransformed_dim]
         active = x[self.untransformed_dim :]
@@ -163,6 +181,20 @@ class ContinuousAffineCoupling(AbstractBijection):
         y: ArrayLike,
         condition: ArrayLike | None = None,
     ) -> tuple[Array, Array]:
+        """Inverse map ``y → x`` and its scalar log-determinant.
+
+        Args:
+            y: Single event of shape ``(dim,)``.
+            condition: Packed ``[t, c]`` of shape ``(1 + control_dim,)`` (build
+                it with :func:`gauss_flows.pack_time_control`). Required.
+
+        Returns:
+            Tuple ``(x, log_det)`` with ``x`` of shape ``(dim,)`` and a scalar
+            ``log_det``.
+
+        Raises:
+            ValueError: If ``condition`` is ``None``.
+        """
         y = jnp.asarray(y)
         passive = y[: self.untransformed_dim]
         active_y = y[self.untransformed_dim :]

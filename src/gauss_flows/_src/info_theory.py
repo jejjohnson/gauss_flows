@@ -1,15 +1,22 @@
-"""Information-theoretic measures using normalizing flows.
+"""Information-theoretic measures for normalizing flows.
 
-These functions compute various IT measures in three complementary ways:
+Three complementary families of estimators are provided, each measuring the
+same quantities (entropy, total correlation, mutual information, KL divergence,
+negentropy) but under different assumptions. All entropies and divergences are
+returned in **nats** (natural logarithm).
 
-* **Analytical** closed forms for multivariate Gaussians
-  (:func:`gaussian_entropy`, :func:`gaussian_total_correlation`,
-  :func:`gaussian_mutual_information`, :func:`gaussian_kl_divergence`).
-* **Change-of-variables** Monte-Carlo estimators that exploit the exact
-  log-density of a fitted flow (:func:`entropy`, :func:`total_correlation`,
+* **Flow-based Monte-Carlo** estimators draw ``n_samples`` from a *trained*
+  flow and average its exact change-of-variables log-density. They require a
+  ``key`` and converge as O(1/√N) (:func:`entropy`, :func:`total_correlation`,
   :func:`mutual_information`, :func:`kl_divergence`, :func:`negentropy`).
-* **RBIG-way** estimators that accumulate the total-correlation removed by a
-  Gaussianization flow (:func:`information_reduction`,
+* **Analytical Gaussian** closed forms evaluate the exact expression for a
+  multivariate Gaussian from its covariance (and mean). They are deterministic
+  and take no samples (:func:`gaussian_entropy`,
+  :func:`gaussian_total_correlation`, :func:`gaussian_mutual_information`,
+  :func:`gaussian_kl_divergence`).
+* **RBIG-way reductions** accumulate the total correlation removed by a
+  Gaussianization flow, pairing histogram marginal entropies with a Gaussian
+  joint entropy (:func:`information_reduction`,
   :func:`total_correlation_reduction`, :func:`entropy_reduction`,
   :func:`kl_divergence_reduction`).
 """
@@ -20,22 +27,36 @@ import jax
 import jax.numpy as jnp
 from flowjax.distributions import AbstractDistribution
 from jax import Array
-from jaxtyping import ArrayLike
+from jaxtyping import ArrayLike, PRNGKeyArray
 
 
-def entropy(dist: AbstractDistribution, n_samples: int = 10000, *, key) -> Array:
-    """Estimate the differential entropy of a distribution.
+def entropy(
+    dist: AbstractDistribution, n_samples: int = 10000, *, key: PRNGKeyArray
+) -> Array:
+    """Differential entropy of a flow (flow-based Monte-Carlo estimator).
 
-    Uses Monte Carlo estimation: H(X) = -E[log p(X)] where samples are drawn
-    from the distribution.
+    Draws samples from the trained ``dist`` and averages its exact log-density::
+
+        H(X) = −E[log p(X)] ≈ −(1/N) Σᵢ log p(xᵢ),   xᵢ ∼ dist.
+
+    The estimate converges as O(1/√N) in ``n_samples``.
 
     Args:
-        dist: A flowjax distribution.
-        n_samples: Number of Monte Carlo samples. Defaults to 10000.
-        key: JAX random key.
+        dist: A trained flowjax distribution exposing ``sample`` and
+            ``log_prob``.
+        n_samples: Number of Monte-Carlo samples. Defaults to 10000.
+        key: JAX PRNG key used to draw the samples.
 
     Returns:
-        Scalar estimate of the differential entropy.
+        Scalar differential-entropy estimate (in nats).
+
+    Example:
+        Requires a fitted flow, so the call is slow and non-deterministic::
+
+            import jax.random as jr
+            from gauss_flows import entropy
+
+            h = entropy(trained_flow, n_samples=10000, key=jr.key(0))
     """
     samples = dist.sample(key, (n_samples,))
     log_probs = dist.log_prob(samples)
@@ -43,21 +64,34 @@ def entropy(dist: AbstractDistribution, n_samples: int = 10000, *, key) -> Array
 
 
 def total_correlation(
-    dist: AbstractDistribution, n_samples: int = 10000, *, key
+    dist: AbstractDistribution, n_samples: int = 10000, *, key: PRNGKeyArray
 ) -> Array:
-    """Estimate the total correlation (multi-information) of a distribution.
+    """Total correlation of a flow (flow-based Monte-Carlo estimator).
 
-    Total correlation is defined as:
-        TC(X) = sum_i H(X_i) - H(X)
-    where H(X_i) is the marginal entropy of each dimension.
+    Total correlation (multi-information) is the gap between the sum of marginal
+    entropies and the joint entropy::
+
+        TC(X) = Σᵢ H(Xᵢ) − H(X).
+
+    Samples are drawn from the trained ``dist``; the joint entropy is the
+    Monte-Carlo average −(1/N) Σ log p(xᵢ), while each marginal entropy uses a
+    Gaussian fitted to the corresponding sample column. Converges as O(1/√N).
 
     Args:
-        dist: A flowjax distribution with 1D shape.
-        n_samples: Number of Monte Carlo samples. Defaults to 10000.
-        key: JAX random key.
+        dist: A trained flowjax distribution with a 1-D event shape.
+        n_samples: Number of Monte-Carlo samples. Defaults to 10000.
+        key: JAX PRNG key used to draw the samples.
 
     Returns:
-        Scalar estimate of total correlation (in nats).
+        Scalar total-correlation estimate (in nats).
+
+    Example:
+        Requires a fitted flow, so the call is slow and non-deterministic::
+
+            import jax.random as jr
+            from gauss_flows import total_correlation
+
+            tc = total_correlation(trained_flow, n_samples=10000, key=jr.key(0))
     """
     import jax.random as jr
 
@@ -88,21 +122,36 @@ def mutual_information(
     dist_y: AbstractDistribution,
     n_samples: int = 10000,
     *,
-    key,
+    key: PRNGKeyArray,
 ) -> Array:
-    """Estimate the mutual information I(X; Y).
+    """Mutual information I(X; Y) of flows (flow-based Monte-Carlo estimator).
 
-    I(X; Y) = H(X) + H(Y) - H(X, Y)
+    Combines three Monte-Carlo entropy estimates of the supplied trained
+    flows::
+
+        I(X; Y) = H(X) + H(Y) − H(X, Y).
+
+    Each entropy is estimated via :func:`entropy` from independent sample
+    batches, so the result converges as O(1/√N).
 
     Args:
-        dist_xy: Joint distribution of (X, Y).
-        dist_x: Marginal distribution of X.
-        dist_y: Marginal distribution of Y.
-        n_samples: Number of Monte Carlo samples. Defaults to 10000.
-        key: JAX random key.
+        dist_xy: Trained joint distribution of (X, Y).
+        dist_x: Trained marginal distribution of X.
+        dist_y: Trained marginal distribution of Y.
+        n_samples: Number of Monte-Carlo samples per entropy term.
+            Defaults to 10000.
+        key: JAX PRNG key; split three ways for the three entropy estimates.
 
     Returns:
-        Scalar estimate of mutual information.
+        Scalar mutual-information estimate (in nats).
+
+    Example:
+        Requires fitted flows, so the call is slow and non-deterministic::
+
+            import jax.random as jr
+            from gauss_flows import mutual_information
+
+            mi = mutual_information(flow_xy, flow_x, flow_y, key=jr.key(0))
     """
     import jax.random as jr
 
@@ -118,20 +167,34 @@ def kl_divergence(
     dist_q: AbstractDistribution,
     n_samples: int = 10000,
     *,
-    key,
+    key: PRNGKeyArray,
 ) -> Array:
-    """Estimate the KL divergence KL(P || Q) using Monte Carlo.
+    """KL divergence KL(P ‖ Q) of flows (flow-based Monte-Carlo estimator).
 
-    KL(P || Q) = E_P[log p(X) - log q(X)]
+    Samples are drawn from ``dist_p`` and both flows' exact log-densities are
+    averaged::
+
+        KL(P ‖ Q) = E_P[log p(X) − log q(X)]
+                  ≈ (1/N) Σᵢ [log p(xᵢ) − log q(xᵢ)],   xᵢ ∼ dist_p.
+
+    Converges as O(1/√N) in ``n_samples``.
 
     Args:
-        dist_p: Distribution P (samples are drawn from this).
-        dist_q: Distribution Q (log-probs are evaluated under this).
-        n_samples: Number of Monte Carlo samples. Defaults to 10000.
-        key: JAX random key.
+        dist_p: Trained distribution P; samples are drawn from this.
+        dist_q: Trained distribution Q; log-probs are evaluated under this.
+        n_samples: Number of Monte-Carlo samples. Defaults to 10000.
+        key: JAX PRNG key used to draw the samples from P.
 
     Returns:
-        Scalar estimate of the KL divergence.
+        Scalar KL-divergence estimate (in nats).
+
+    Example:
+        Requires fitted flows, so the call is slow and non-deterministic::
+
+            import jax.random as jr
+            from gauss_flows import kl_divergence
+
+            kl = kl_divergence(flow_p, flow_q, n_samples=10000, key=jr.key(0))
     """
     samples = dist_p.sample(key, (n_samples,))
     log_p = dist_p.log_prob(samples)
@@ -139,20 +202,35 @@ def kl_divergence(
     return jnp.mean(log_p - log_q)
 
 
-def negentropy(dist: AbstractDistribution, n_samples: int = 10000, *, key) -> Array:
-    """Estimate the negentropy of a distribution.
+def negentropy(
+    dist: AbstractDistribution, n_samples: int = 10000, *, key: PRNGKeyArray
+) -> Array:
+    """Negentropy of a flow (flow-based Monte-Carlo estimator).
 
-    Negentropy is defined as:
-        J(X) = H(X_gauss) - H(X)
-    where X_gauss is a Gaussian with the same mean and variance as X.
+    Negentropy is the entropy gap to the Gaussian of matched moments — a
+    non-negative measure of non-Gaussianity::
+
+        J(X) = H(X_gauss) − H(X),
+
+    where ``X_gauss`` is the Normal sharing the per-dimension mean and standard
+    deviation of the samples drawn from ``dist``. Both entropies are estimated
+    via :func:`entropy`, so the result converges as O(1/√N).
 
     Args:
-        dist: A flowjax distribution.
-        n_samples: Number of Monte Carlo samples. Defaults to 10000.
-        key: JAX random key.
+        dist: A trained flowjax distribution.
+        n_samples: Number of Monte-Carlo samples. Defaults to 10000.
+        key: JAX PRNG key used to draw the samples and estimate both entropies.
 
     Returns:
-        Scalar estimate of negentropy.
+        Scalar negentropy estimate (in nats).
+
+    Example:
+        Requires a fitted flow, so the call is slow and non-deterministic::
+
+            import jax.random as jr
+            from gauss_flows import negentropy
+
+            j = negentropy(trained_flow, n_samples=10000, key=jr.key(0))
     """
     import jax.random as jr
     from flowjax.distributions import Normal
@@ -178,15 +256,23 @@ def negentropy(dist: AbstractDistribution, n_samples: int = 10000, *, key) -> Ar
 
 
 def gaussian_entropy(covariance: ArrayLike) -> Array:
-    """Differential entropy of a multivariate Gaussian (analytical).
+    """Differential entropy of a Gaussian (analytical Gaussian closed form).
 
-    H(X) = 1/2 log |2 pi e Sigma|
+    Deterministic, sample-free closed form in the covariance::
+
+        H(X) = ½ log |2π e Σ| = ½ (d log(2π e) + log|Σ|).
 
     Args:
-        covariance: Covariance matrix Sigma of shape ``(d, d)``.
+        covariance: Covariance matrix Σ of shape ``(d, d)``.
 
     Returns:
-        Scalar differential entropy in nats.
+        Scalar differential entropy (in nats).
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> from gauss_flows import gaussian_entropy
+        >>> round(float(gaussian_entropy(jnp.eye(3))), 4)
+        4.2568
     """
     cov = jnp.asarray(covariance)
     d = cov.shape[-1]
@@ -195,15 +281,29 @@ def gaussian_entropy(covariance: ArrayLike) -> Array:
 
 
 def gaussian_total_correlation(covariance: ArrayLike) -> Array:
-    """Total correlation of a multivariate Gaussian (analytical).
+    """Total correlation of a Gaussian (analytical Gaussian closed form).
 
-    TC(X) = 1/2 [ sum_i log Sigma_ii - log |Sigma| ]
+    Deterministic, sample-free closed form comparing the diagonal variances to
+    the full covariance::
+
+        TC(X) = ½ [ Σᵢ log Σᵢᵢ − log|Σ| ].
+
+    It is zero exactly when Σ is diagonal (independent components).
 
     Args:
-        covariance: Covariance matrix Sigma of shape ``(d, d)``.
+        covariance: Covariance matrix Σ of shape ``(d, d)``.
 
     Returns:
-        Scalar total correlation in nats.
+        Scalar total correlation (in nats).
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> from gauss_flows import gaussian_total_correlation
+        >>> cov = jnp.array([[1.0, 0.5], [0.5, 1.0]])
+        >>> round(float(gaussian_total_correlation(cov)), 4)
+        0.1438
+        >>> float(gaussian_total_correlation(jnp.eye(2)))  # diagonal → 0
+        0.0
     """
     cov = jnp.asarray(covariance)
     variances = jnp.diagonal(cov)
@@ -212,17 +312,28 @@ def gaussian_total_correlation(covariance: ArrayLike) -> Array:
 
 
 def gaussian_mutual_information(covariance: ArrayLike, dim_x: int) -> Array:
-    """Mutual information between two Gaussian blocks X and Y (analytical).
+    """Mutual information of Gaussian blocks (analytical Gaussian closed form).
 
-    I(X; Y) = H(X) + H(Y) - H(X, Y), where the joint covariance is partitioned
-    into the leading ``dim_x`` dimensions (X) and the rest (Y).
+    Deterministic, sample-free closed form. The joint covariance is partitioned
+    into the leading ``dim_x`` dimensions (X) and the remainder (Y), then::
+
+        I(X; Y) = H(X) + H(Y) − H(X, Y),
+
+    each entropy evaluated via :func:`gaussian_entropy`.
 
     Args:
         covariance: Joint covariance matrix of ``[X, Y]`` of shape ``(d, d)``.
         dim_x: Number of leading dimensions belonging to X.
 
     Returns:
-        Scalar mutual information in nats.
+        Scalar mutual information (in nats).
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> from gauss_flows import gaussian_mutual_information
+        >>> cov = jnp.array([[1.0, 0.5], [0.5, 1.0]])
+        >>> round(float(gaussian_mutual_information(cov, dim_x=1)), 4)
+        0.1438
     """
     cov = jnp.asarray(covariance)
     cov_xx = cov[:dim_x, :dim_x]
@@ -236,11 +347,15 @@ def gaussian_kl_divergence(
     mean_q: ArrayLike,
     cov_q: ArrayLike,
 ) -> Array:
-    """KL divergence between two multivariate Gaussians (analytical).
+    """KL divergence of two Gaussians (analytical Gaussian closed form).
 
-    KL(N_p || N_q) = 1/2 [ tr(Sigma_q^-1 Sigma_p)
-        + (mu_q - mu_p)^T Sigma_q^-1 (mu_q - mu_p) - d
-        + log(|Sigma_q| / |Sigma_p|) ]
+    Deterministic, sample-free closed form::
+
+        KL(N_p ‖ N_q) = ½ [ tr(Σ_q⁻¹ Σ_p)
+                            + (μ_q − μ_p)ᵀ Σ_q⁻¹ (μ_q − μ_p) − d
+                            + log(|Σ_q| / |Σ_p|) ].
+
+    It is zero exactly when the two Gaussians coincide.
 
     Args:
         mean_p: Mean of P, shape ``(d,)``.
@@ -249,7 +364,14 @@ def gaussian_kl_divergence(
         cov_q: Covariance of Q, shape ``(d, d)``.
 
     Returns:
-        Scalar KL divergence in nats.
+        Scalar KL divergence (in nats).
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> from gauss_flows import gaussian_kl_divergence
+        >>> mu, eye = jnp.zeros(2), jnp.eye(2)
+        >>> float(gaussian_kl_divergence(mu, eye, mu, eye))  # identical → 0
+        0.0
     """
     mu_p = jnp.asarray(mean_p)
     mu_q = jnp.asarray(mean_q)
@@ -346,24 +468,31 @@ def _total_correlation_estimate(x: Array, n_bins: int) -> Array:
 def information_reduction(
     x_before: ArrayLike, x_after: ArrayLike, *, n_bins: int | None = None
 ) -> Array:
-    """Total-correlation removed between two representations of the data.
+    """Total correlation removed between two representations (RBIG-way reduction).
 
-    This is the building block of the "RBIG-way" estimators. The reduction is
-    the drop in total correlation when moving from ``x_before`` to ``x_after``::
+    The building block of the RBIG-way estimators: the drop in total
+    correlation when moving from ``x_before`` to ``x_after``::
 
-        Delta_TC = TC(x_before) - TC(x_after)
+        Δ_TC = TC(x_before) − TC(x_after),
 
-    with ``TC(X) = sum_i H(X_i) - H(X)``, marginal entropies estimated from
+    with ``TC(X) = Σᵢ H(Xᵢ) − H(X)``, marginal entropies estimated from
     histograms and the joint entropy from the Gaussian (maximum-entropy)
     approximation.
 
     Args:
         x_before: Data before the transformation, shape ``(n, d)``.
         x_after: Data after the transformation, shape ``(n, d)``.
-        n_bins: Histogram bins per marginal. Defaults to ``round(sqrt(n))``.
+        n_bins: Histogram bins per marginal. Defaults to ``round(√n)``.
 
     Returns:
-        Scalar total-correlation reduction in nats.
+        Scalar total-correlation reduction (in nats).
+
+    Example:
+        Plain sampled data, no flow required::
+
+            from gauss_flows import information_reduction
+
+            delta_tc = information_reduction(x_before, x_after)
     """
     xb = jnp.asarray(x_before)
     xa = jnp.asarray(x_after)

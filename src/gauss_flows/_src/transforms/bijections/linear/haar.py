@@ -10,13 +10,41 @@ from jaxtyping import ArrayLike
 
 
 class HaarWavelet(AbstractBijection):
-    """Haar wavelet transform bijection.
+    """Haar wavelet transform bijection (1-D, last axis).
 
-    Implements the 1D Haar wavelet transform as a bijection. This is used
-    in multi-scale flow architectures to factorize spatial information.
+    Applies the single-level 1-D Haar wavelet transform along the last axis:
+    splits each consecutive even/odd pair into its average and half-difference
+    ``avg = (even + odd)/2``, ``diff = (even − odd)/2``, then concatenates all
+    averages followed by all differences. This factorises an event into a
+    coarse (low-pass) and a detail (high-pass) half, as used in multi-scale
+    flow architectures. Both halves scale by ``1/2``, so the forward
+    log-determinant is the constant ``−n·log 2`` where ``n`` is the size of
+    the last axis.
+
+    Operates on a single event whose last axis is divisible by 2; the
+    transform acts independently along any leading axes.
 
     Args:
-        shape: Shape of the input. The last dimension must be divisible by 2.
+        shape: Event shape. The last dimension must be divisible by 2.
+
+    Raises:
+        ValueError: If the last dimension of ``shape`` is not divisible by 2.
+
+    Shape:
+        - transform_and_log_det: ``(…, n)`` → ``(…, n)``, scalar log_det = −n·log 2
+        - inverse_and_log_det:   ``(…, n)`` → ``(…, n)``, scalar log_det = +n·log 2
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> from gauss_flows import HaarWavelet
+        >>> t = HaarWavelet(shape=(4,))
+        >>> x = jnp.array([1.0, 3.0, 5.0, 9.0])
+        >>> y, log_det = t.transform_and_log_det(x)
+        >>> y  # [avg0, avg1, diff0, diff1]
+        Array([ 2.,  7., -1., -2.], dtype=float32)
+        >>> x_rec, _ = t.inverse_and_log_det(y)
+        >>> bool(jnp.allclose(x, x_rec))
+        True
     """
 
     shape: tuple[int, ...]

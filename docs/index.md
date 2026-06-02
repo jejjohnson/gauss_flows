@@ -48,14 +48,17 @@ from `gauss_flows` directly rather than the `_src/` paths.
 
 ## Installation
 
+Not yet on PyPI — install from source:
+
 ```bash
-uv add gauss_flows
+pip install git+https://github.com/jejjohnson/gauss_flows
 ```
 
-Or with pip:
+Or for development, clone and `uv sync`:
 
 ```bash
-pip install gauss_flows
+git clone https://github.com/jejjohnson/gauss_flows && cd gauss_flows
+uv sync --all-groups
 ```
 
 ## Quickstart
@@ -75,8 +78,23 @@ log_probs = flow.log_prob(samples)
 H = entropy(flow, n_samples=10_000, key=key)
 ```
 
+## What's inside
+
+- **[Bijections](api/bijections.md)** — coupling, marginal CDFs, linear/rotation,
+  normalisation, periodic, classic residual, and continuous (FFJORD) layers.
+- **[Surjections & Stochastic](api/surjections.md)** — dimension-changing surjections and
+  VAE-style stochastic transforms with lower-bound likelihoods.
+- **[Base Distributions](api/distributions.md)** — Gaussian mixtures, low-rank PCA Gaussian,
+  conditional diagonals, and sphere distributions.
+- **[Flows & RBIG](api/flows.md)** — `SurVAEFlow`, the `gaussianization_flow` /
+  `coupling_gaussianization_flow` / `iterative_rbig` factories, and the `fit_rbig` warm-start.
+- **[NumPyro Inference](api/inference.md)** — `FlowDist`, `FlowGuide`, and
+  `fit_gaussianization_flow`.
+- **[Information Theory](api/info_theory.md)** — entropy, total correlation, mutual
+  information, KL, and negentropy (Monte-Carlo, analytical, and RBIG-way).
+
 ## Links
 
-- [API Reference](api/reference.md)
-- [GitHub](https://github.com/jejjohnson/gauss_flows)
+- [API Reference](api/index.md)
 - [Changelog](https://github.com/jejjohnson/gauss_flows/blob/main/CHANGELOG.md)
+- [GitHub](https://github.com/jejjohnson/gauss_flows)

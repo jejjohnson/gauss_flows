@@ -22,23 +22,50 @@ from jaxtyping import ArrayLike, PRNGKeyArray
 
 
 class GaussianPCA(AbstractDistribution):
-    """Probabilistic-PCA Gaussian base distribution.
+    """Probabilistic-PCA Gaussian base distribution (low-rank + diagonal Σ).
 
-    ``x ~ N(loc, W W^T + sigma^2 I)`` with ``W in R^{D x K}``.
+    ``x ~ N(loc, Σ)`` with low-rank-plus-diagonal covariance
+    ``Σ = W Wᵀ + σ² I`` and ``W ∈ ℝ^{D × K}``. This costs only ``O(DK)``
+    parameters; sampling uses the reparametrisation ``x = loc + W z + σ ε``
+    (``z ∈ ℝ^K``, ``ε ∈ ℝ^D``), and ``log_prob`` applies the Woodbury
+    identity / matrix-determinant lemma so the inverse and log-determinant
+    cost ``O(K³) + O(DK)`` rather than ``O(D³)``.
+
+    Use as a flow base when the Gaussianized target has approximately
+    low-rank correlation structure in ``D`` dimensions.
 
     Args:
         key: JAX random key used to initialise ``W``.
-        event_shape: Shape of a single sample ``(D,)``.
-        latent_dim: Rank ``K``.
+        event_shape: Shape of a single sample ``(D,)``. 1-D only.
+        latent_dim: Rank ``K`` of the factor loading ``W`` (``1 ≤ K ≤ D``).
         loc: Mean vector. Scalar is broadcast to shape ``(D,)``.
-        log_sigma_init: Initial value of ``log(sigma)``.
+            Defaults to ``0.0``.
+        log_sigma_init: Initial value of ``log σ``. Defaults to ``0.0``.
         W_init_scale: Std of the Gaussian used to initialise ``W``.
-        eps: Numerical floor added to ``sigma^2`` so the Cholesky of the
-            ``K x K`` capacitance matrix stays well-defined and the
-            Woodbury quadratic stays finite even if ``log_sigma`` drifts
-            very negative during training. Default ``1e-12`` is far below
-            any reasonable target variance and does not affect gradients
-            in the well-conditioned regime.
+            Defaults to ``0.1``.
+        eps: Numerical floor added to ``σ²`` so the Cholesky of the
+            ``K × K`` capacitance matrix stays well-defined and the
+            Woodbury quadratic stays finite even if ``log σ`` drifts very
+            negative during training. Defaults to ``1e-12`` — far below any
+            reasonable target variance, with no effect on gradients in the
+            well-conditioned regime.
+
+    Shape:
+        - log_prob: ``(D,)`` → scalar    (batch via vmap / leading axes)
+        - sample:   ``(key, sample_shape)`` → ``(*sample_shape, D)``
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> from gauss_flows import GaussianPCA
+        >>> dist = GaussianPCA(jr.key(0), event_shape=(5,), latent_dim=2)
+        >>> dist.sample(jr.key(1), (8,)).shape
+        (8, 5)
+        >>> dist.log_prob(jnp.zeros(5)).shape
+        ()
+
+    References:
+        Tipping & Bishop 1999, *Probabilistic Principal Component Analysis*.
     """
 
     latent_dim: int = eqx.field(static=True)

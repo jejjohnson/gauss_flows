@@ -12,17 +12,40 @@ from jaxtyping import ArrayLike, PRNGKeyArray
 
 
 class Invertible1x1Conv(AbstractBijection):
-    """Invertible 1x1 convolution as used in Glow (https://arxiv.org/abs/1807.03039).
+    """Invertible 1×1 convolution with LU-parameterised weight (Glow).
 
-    Parameterizes an invertible linear mixing across channels/features using
-    an LU decomposition to ensure invertibility and efficient log-det computation.
-    The weight matrix is implicitly W = L @ U where L is lower triangular with
-    unit diagonal and U is upper triangular with positive diagonal (stored as
-    log_diag_u). Log-det is computed cheaply as sum(log_diag_u).
+    Mixes channels/features with an invertible linear map ``y = W·x``,
+    where ``W = L·U`` is stored in LU form: ``L`` is lower-triangular with
+    unit diagonal and ``U`` is upper-triangular with strictly positive
+    diagonal (parameterised as ``exp(log_diag_u)``). This guarantees
+    invertibility and reduces the log-determinant to the cheap
+    ``∑ log_diag_u``, avoiding an explicit Jacobian. Introduced as the 1×1
+    convolution of Glow (Kingma & Dhariwal 2018,
+    https://arxiv.org/abs/1807.03039).
+
+    Operates on a single ``(n_channels,)`` event (the channel/feature
+    vector). Callers vmap over any spatial or batch axes.
 
     Args:
-        key: JAX random key.
-        n_channels: Number of channels/features.
+        key: PRNG key for near-identity initialisation (small off-diagonals).
+        n_channels: Number of channels / feature dimensions.
+
+    Shape:
+        - transform_and_log_det: ``(n_channels,)`` → ``(n_channels,)``, scalar log_det
+        - inverse_and_log_det:   ``(n_channels,)`` → ``(n_channels,)``, scalar log_det
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> from gauss_flows import Invertible1x1Conv
+        >>> conv = Invertible1x1Conv(jr.key(0), n_channels=4)
+        >>> x = jr.normal(jr.key(1), (4,))
+        >>> y, log_det = conv.transform_and_log_det(x)
+        >>> y.shape
+        (4,)
+        >>> x_rec, log_det_inv = conv.inverse_and_log_det(y)
+        >>> bool(jnp.allclose(x, x_rec, atol=1e-5))
+        True
     """
 
     shape: tuple[int, ...]

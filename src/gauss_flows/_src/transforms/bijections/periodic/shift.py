@@ -18,24 +18,34 @@ from gauss_flows._src.transforms.bijections.periodic._utils import (
 class PeriodicShift(AbstractBijection):
     """Learnable circular shift on selected periodic dimensions.
 
-    Adds a learnable per-index offset and re-wraps into ``[-bound, bound]``.
-    Determinant is 1, so ``log_det = 0``.
-
-    Shape:
-        Input/output: ``(D,)`` (single event). ``log_det`` is a scalar ``Array``.
+    Adds a learnable per-index offset to the chosen dimensions and re-wraps the
+    result back into ``[−bound, bound]``. The map is a translation on the
+    circle, so its Jacobian determinant is 1 and ``log_det = 0``. Non-periodic
+    dimensions pass through unchanged.
 
     Args:
-        ind: Indices of periodic dimensions to shift.
-        shape: Event shape, must be 1D.
+        ind: Indices of periodic dimensions to shift. Must be unique and lie in
+            ``[0, n_dims)``.
+        shape: Event shape ``(n_dims,)``. Must be 1-D.
         bound: Half-width of the periodic interval. Defaults to ``π``.
-        shift_init: Optional initial shift. Either a scalar (broadcast to every
-            index) or a 1D array of length ``len(ind)``.
+        shift_init: Initial shift. Either a scalar (broadcast to every index) or
+            a 1-D array of length ``len(ind)``. Defaults to ``0.0``.
+
+    Raises:
+        ValueError: If ``shape`` is not 1-D, if any index is out of range or
+            duplicated, or if ``shift_init`` has an incompatible shape.
+
+    Shape:
+        - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
+        - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
 
     Example:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import PeriodicShift
         >>> shift = PeriodicShift(ind=(0,), shape=(2,), shift_init=0.25)
         >>> y, log_det = shift.transform_and_log_det(jnp.array([1.0, 0.5]))
+        >>> y.shape, float(log_det)
+        ((2,), 0.0)
     """
 
     shape: tuple[int, ...]

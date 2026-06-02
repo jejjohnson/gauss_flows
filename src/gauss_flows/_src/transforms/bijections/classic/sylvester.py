@@ -17,33 +17,48 @@ from jaxtyping import ArrayLike, PRNGKeyArray
 class SylvesterFlow(AbstractBijection):
     """Sylvester normalizing flow (van den Berg et al. 2018).
 
-    Generalises :class:`PlanarFlow` to rank ``M <= D``:
+    Generalises :class:`PlanarFlow` from a rank-1 to a rank-``M`` (``M ≤ D``)
+    perturbation:
 
-    .. code-block::
+        ``y = x + Q · R̃ · tanh(R · Qᵀ · x + b)``
 
-        y = x + Q @ R_tilde @ tanh(R @ Q^T @ x + b)
+    where ``Q ∈ ℝ^{D×M}`` has orthonormal columns (parameterised via ``M``
+    Householder reflections applied to ``I_D``), and ``R``, ``R̃`` are ``M×M``
+    upper-triangular matrices whose diagonals are constrained with ``tanh`` to
+    keep ``|diag(R) · diag(R̃)| < 1`` — sufficient for invertibility. Via
+    Sylvester's determinant identity the log-abs-det reduces to a sum over the
+    ``M`` diagonal entries, costing ``O(M)`` rather than ``O(D)``.
 
-    where ``Q in R^{D x M}`` has orthonormal columns (parameterised via
-    ``M`` Householder reflections on ``I_D``), and ``R``, ``R_tilde`` are
-    ``M x M`` upper-triangular matrices with diagonal entries constrained
-    via ``tanh`` (to keep ``|diag(R) * diag(R_tilde)| < 1``, which is
-    sufficient for invertibility).
-
-    Via Sylvester's determinant identity the log-abs-det reduces to a
-    sum over the ``M`` diagonal entries.
+    The forward map has no closed-form inverse, so this layer is generative-only:
+    use it in the sampling / variational-inference direction via
+    :meth:`flowjax.distributions.Transformed.sample_and_log_prob`.
 
     Args:
-        key: JAX random key.
-        shape: Shape of the input ``(n_dims,)``.
-        rank: Rank ``M`` of the flow. Defaults to the full input dim.
+        key: PRNG key used to initialise all parameters.
+        shape: Event shape ``(n_dims,)``. Must be 1-D.
+        rank: Rank ``M`` of the flow. Defaults to the full input dim ``D``.
         scale_init: Std of the Gaussian used to initialise the Householder
             vectors (offset from the identity), the strict upper-triangular
-            entries of ``R`` and ``R_tilde``, and their raw diagonal
-            parameter vectors.
+            entries of ``R`` and ``R̃``, and their raw diagonal parameter
+            vectors. Defaults to ``0.01``.
 
-    Note:
-        No algebraic inverse; ``inverse_and_log_det`` raises
-        :class:`NotImplementedError`. Use only in the generative direction.
+    Raises:
+        ValueError: If ``shape`` is not 1-D or ``rank`` is outside ``[1, D]``.
+        NotImplementedError: From ``inverse_and_log_det`` — there is no
+            algebraic inverse.
+
+    Shape:
+        - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
+        - inverse_and_log_det:   not implemented (raises)
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> from gauss_flows import SylvesterFlow
+        >>> flow = SylvesterFlow(jr.key(0), shape=(4,), rank=2)
+        >>> y, log_det = flow.transform_and_log_det(jnp.ones((4,)))
+        >>> y.shape, log_det.shape
+        ((4,), ())
     """
 
     shape: tuple[int, ...]

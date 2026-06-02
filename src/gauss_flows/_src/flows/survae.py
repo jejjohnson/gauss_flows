@@ -108,6 +108,27 @@ class SurVAEFlow(eqx.Module):
         the whole point of coupling) and the *external* ``condition``
         (present only when ``cond_dim > 0``). The two are concatenated
         inside the inner MLP; users do not slice or merge them manually.
+
+    Shape:
+        Methods follow the single-event convention but accept a leading
+        ``sample_shape`` that is vmapped over internally:
+
+        - ``sample(key, sample_shape, condition)`` → ``sample_shape + data_shape``
+        - ``log_prob(x, key, condition)``: ``x`` of shape
+          ``sample_shape + data_shape`` → ``sample_shape``
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> from flowjax.distributions import Normal
+        >>> from gauss_flows import SurVAEFlow, AffineCoupling
+        >>> base = Normal(jnp.zeros(4))
+        >>> flow = SurVAEFlow(base, [AffineCoupling(jr.key(0), shape=(4,))])
+        >>> x = flow.sample(jr.key(1), (5,))
+        >>> x.shape
+        (5, 4)
+        >>> flow.log_prob(x, jr.key(2)).shape
+        (5,)
     """
 
     base_dist: AbstractDistribution

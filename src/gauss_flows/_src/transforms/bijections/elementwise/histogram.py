@@ -59,9 +59,10 @@ class HistogramCDF(AbstractBijection):
         inv_interp: Optional pre-built inverse-CDF interpolator.
 
     Shape:
-        - Input  ``x``:  ``(n_dims,)``
-        - Output ``y``:  ``(n_dims,)`` in ``[0, 1]``
-        - ``log_det``:   scalar (sum of per-dim ``log(density)``)
+        - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)`` in ``[0, 1]``,
+          scalar log_det (sum of per-dim ``log(density)``)
+        - inverse_and_log_det:   ``(n_dims,)`` in ``[0, 1]`` → ``(n_dims,)``,
+          scalar log_det
 
     Example:
         Fit and transform on Gaussian data:
@@ -69,10 +70,11 @@ class HistogramCDF(AbstractBijection):
         >>> import jax.numpy as jnp
         >>> import jax.random as jr
         >>> from gauss_flows import HistogramCDF
-        >>>
         >>> data = jr.normal(jr.key(0), (5000, 3))
         >>> hist = HistogramCDF(n_bins=64, shape=(3,)).fit(data)
         >>> y, log_det = hist.transform_and_log_det(jnp.zeros(3))
+        >>> y.shape
+        (3,)
         >>> # y is roughly [0.5, 0.5, 0.5] (CDF at 0 of N(0,1) ≈ 0.5).
     """
 

@@ -34,8 +34,18 @@ plugins:
           paths: [src]
           options:
             docstring_style: google
+            docstring_section_style: table
             show_source: true
             show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            heading_level: 3
+            show_signature_annotations: true
+            signature_crossrefs: true
+            merge_init_into_class: false
+            filters: ["!^_"]
   - mkdocs-jupyter:
       execute: false
       ignore_h1_titles: true
@@ -55,8 +65,16 @@ nav:
       - Conditional Flow Three Ways: notebooks/08_conditional_flow_three_ways.ipynb
       - Latent ODE on Spirals: notebooks/09_latent_ode_spirals.ipynb
       - Information-Theory Measures: notebooks/10_information_theory.ipynb
-  - API Reference: api/reference.md
+  - API Reference:
+      - Overview: api/index.md
+      - Bijections: api/bijections.md
+      - Surjections & Stochastic: api/surjections.md
+      - Base Distributions: api/distributions.md
+      - Flows & RBIG: api/flows.md
+      - NumPyro Inference: api/inference.md
+      - Information Theory: api/info_theory.md
   - Contributing: contributing.md
+  - Changelog: https://github.com/jejjohnson/gauss_flows/blob/main/CHANGELOG.md
 
 markdown_extensions:
   - admonition

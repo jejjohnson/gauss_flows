@@ -16,34 +16,45 @@ from gauss_flows._src.transforms.bijections.periodic._utils import (
 
 
 class PeriodicWrap(AbstractBijection):
-    """Canonical projection of selected dimensions onto ``[-bound, bound]``.
+    """Canonical projection of selected dimensions onto ``[−bound, bound]``.
+
+    Wraps the chosen periodic dimensions into the canonical interval
+    ``[−bound, bound]`` and leaves all other dimensions untouched.
 
     .. warning::
         This subclasses ``flowjax.bijections.AbstractBijection`` for API
-        compatibility but is **not a true bijection on R** — it is a many-to-one
-        canonical projection. ``x`` and ``x + 2·bound·k`` collapse to the same
-        canonical value, and ``inverse_and_log_det`` returns that same wrapped
-        value (not the original ``x``) with ``log_det = 0``. Composing this
-        inside a ``flowjax.distributions.Transformed`` or ``SurVAEFlow`` will
-        give **incorrect log-densities** if the upstream samples are not already
-        in ``[-bound, bound]``, because the change-of-variables formula assumes
-        invertibility. Use this layer only as a leading-edge canonicaliser for
-        raw angles, never as an inner layer in a density model.
-
-    Shape:
-        Input/output: ``(D,)`` (single event). ``log_det`` is a scalar ``Array``.
+        compatibility but is **not a true bijection on ℝ** — it is a
+        many-to-one canonical projection. ``x`` and ``x + 2·bound·k`` collapse
+        to the same canonical value, and ``inverse_and_log_det`` returns that
+        same wrapped value (not the original ``x``) with ``log_det = 0``.
+        Composing this inside a ``flowjax.distributions.Transformed`` or
+        ``SurVAEFlow`` will give **incorrect log-densities** if the upstream
+        samples are not already in ``[−bound, bound]``, because the
+        change-of-variables formula assumes invertibility. Use this layer only
+        as a leading-edge canonicaliser for raw angles, never as an inner layer
+        in a density model.
 
     Args:
-        ind: Indices of periodic dimensions to wrap.
-        shape: Event shape, must be 1D.
+        ind: Indices of periodic dimensions to wrap. Must lie in
+            ``[0, n_dims)``.
+        shape: Event shape ``(n_dims,)``. Must be 1-D.
         bound: Half-width of the periodic interval. Defaults to ``π``.
+
+    Raises:
+        ValueError: If ``shape`` is not 1-D or any index is out of range.
+
+    Shape:
+        - transform_and_log_det: ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
+        - inverse_and_log_det:   ``(n_dims,)`` → ``(n_dims,)``, scalar log_det
+          (returns the wrapped value, not the original ``x``; see warning)
 
     Example:
         >>> import jax.numpy as jnp
         >>> from gauss_flows import PeriodicWrap
         >>> wrap = PeriodicWrap(ind=(0,), shape=(2,))
         >>> y, log_det = wrap.transform_and_log_det(jnp.array([3.5, 0.2]))
-        >>> # y[0] is in [-π, π); y[1] is unchanged.
+        >>> bool(y[0] >= -jnp.pi and y[0] < jnp.pi)  # dim 0 wrapped; dim 1 kept
+        True
     """
 
     shape: tuple[int, ...]

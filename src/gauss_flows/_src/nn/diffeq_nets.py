@@ -195,6 +195,16 @@ class DiffeqConcat(eqx.Module):
         - Input ``condition``: ``(1 + control_dim,)`` or ``None`` when
           ``control_dim == 0``
         - Output: ``(dim,)``
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> import jax.random as jr
+        >>> from gauss_flows import DiffeqConcat, pack_time_control
+        >>> net = DiffeqConcat(jr.key(0), in_dim=3, control_dim=2, hidden=(16, 16))
+        >>> x = jnp.ones((3,))
+        >>> cond = pack_time_control(0.5, jnp.array([1.0, -1.0]))
+        >>> net(0.25, x, cond).shape
+        (3,)
     """
 
     in_dim: int = eqx.field(static=True)

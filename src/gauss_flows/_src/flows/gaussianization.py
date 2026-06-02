@@ -32,8 +32,14 @@ def gaussianization_flow(
 ) -> Transformed:
     """Construct a Gaussianization flow.
 
-    Each layer consists of a marginal Gaussianization step (using a mixture of
-    Gaussians CDF) followed by a rotation (Householder or orthogonal).
+    Stacks ``n_layers`` alternating G∘R blocks, where each block is a
+    marginal Gaussianization step G (a mixture-of-Gaussians CDF applied
+    per dimension) followed by a rotation R (Householder, orthogonal, or
+    LU-parametrised linear). Mixture means and Householder vectors are
+    randomly initialised to break symmetry so gradient training has a
+    signal to separate the components. The block stack is composed with a
+    memory-efficient :class:`flowjax.bijections.Scan` and wrapped in a
+    base :class:`~flowjax.distributions.Normal`.
 
     Args:
         key: JAX random key.
@@ -43,14 +49,26 @@ def gaussianization_flow(
             Defaults to 8.
         rotation: Type of rotation, one of ``"householder"``, ``"orthogonal"``,
             or ``"lu"`` (LU-parametrised linear + reverse permutation).
-            Defaults to "householder".
-        n_reflections: Number of Householder reflections (only for "householder").
-            Defaults to n_dims.
+            Defaults to ``"householder"``.
+        n_reflections: Number of Householder reflections (only for
+            ``"householder"``). Defaults to ``n_dims``.
         base_dist: Optional base distribution override (must have event
-            shape ``(n_dims,)``). Defaults to a standard ``Normal``.
+            shape ``(n_dims,)`` and be unconditional). Defaults to a standard
+            ``Normal``.
 
     Returns:
-        A flowjax Transformed distribution.
+        A flowjax ``Transformed`` distribution with ``log_prob`` and ``sample``.
+
+    Raises:
+        ValueError: If ``base_dist`` has the wrong event shape, is
+            conditional, or ``rotation`` is not a recognised name.
+
+    Example:
+        >>> import jax.random as jr
+        >>> from gauss_flows import gaussianization_flow
+        >>> flow = gaussianization_flow(jr.key(0), n_dims=4, n_layers=4, n_components=8)
+        >>> flow.sample(jr.key(1), (8,)).shape
+        (8, 4)
     """
     if n_reflections is None:
         n_reflections = n_dims
@@ -116,8 +134,15 @@ def coupling_gaussianization_flow(
 ) -> Transformed:
     """Construct a coupling-based Gaussianization flow.
 
-    Uses rational quadratic spline coupling layers interleaved with
-    permutations. Each layer can represent complex non-linear transformations.
+    Stacks ``n_layers`` alternating C∘P blocks, where each block is a
+    rational-quadratic-spline coupling layer C followed by a permutation P
+    (a :class:`~flowjax.bijections.Flip` for ``n_dims == 2``, a random
+    :class:`~flowjax.bijections.Permute` otherwise; no permutation for
+    ``n_dims == 1``). Unlike :func:`gaussianization_flow`, the coupling
+    conditioner lets each layer represent non-linear, cross-coordinate
+    transformations. The block stack is composed with
+    :class:`flowjax.bijections.Scan` and wrapped in a base
+    :class:`~flowjax.distributions.Normal`.
 
     Args:
         key: JAX random key.
@@ -127,10 +152,18 @@ def coupling_gaussianization_flow(
         nn_width: Hidden layer width for coupling conditioner. Defaults to 64.
         nn_depth: Depth of the coupling conditioner MLP. Defaults to 2.
         interval: Interval for the rational quadratic spline. Defaults to 5.0.
-        invert: Whether to invert the bijection for faster log_prob. Defaults to True.
+        invert: Whether to invert the bijection so ``log_prob`` runs in the
+            fast direction. Defaults to True.
 
     Returns:
-        A flowjax Transformed distribution.
+        A flowjax ``Transformed`` distribution with ``log_prob`` and ``sample``.
+
+    Example:
+        >>> import jax.random as jr
+        >>> from gauss_flows import coupling_gaussianization_flow
+        >>> flow = coupling_gaussianization_flow(jr.key(0), n_dims=4, n_layers=2)
+        >>> flow.sample(jr.key(1), (8,)).shape
+        (8, 4)
     """
     shape = (n_dims,)
     base_dist = Normal(jnp.zeros(n_dims))

@@ -4,8 +4,15 @@ Provides :class:`FlowGuide`, a variational guide that uses a normalizing flow
 as the approximate posterior for Stochastic Variational Inference (SVI).
 """
 
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any
+
 import jax.random as jr
+from flowjax.distributions import Transformed
 from flowjax.experimental.numpyro import register_params
+from jaxtyping import PRNGKeyArray
 from numpyro.infer.autoguide import AutoContinuous
 from numpyro.infer.initialization import init_to_uniform
 
@@ -16,10 +23,13 @@ from gauss_flows._src.inference.numpyro_compat import FlowDist
 class FlowGuide(AutoContinuous):
     """NumPyro variational guide using a Gaussianization flow.
 
-    Uses a normalizing flow as the variational distribution for SVI,
-    modelling a joint distribution over the concatenated unconstrained
-    latent space of the model.  The flow captures cross-variable
-    correlations because all latent sites are handled jointly.
+    Subclasses :class:`numpyro.infer.autoguide.AutoContinuous`, using a
+    normalizing flow as the variational distribution for SVI. The flow
+    models a joint distribution over the concatenated unconstrained latent
+    space of the model, so it captures cross-variable correlations because
+    all latent sites are handled jointly. The flow is built lazily once
+    ``latent_dim`` is known (at prototype setup), and its parameters are
+    registered with NumPyro so the SVI optimiser can update them.
 
     Args:
         model: A NumPyro model.
@@ -59,13 +69,13 @@ class FlowGuide(AutoContinuous):
 
     def __init__(
         self,
-        model,
+        model: Callable[..., Any],
         *,
-        flow_factory=gaussianization_flow,
-        flow_kwargs=None,
-        init_key=None,
-        prefix="auto",
-        init_loc_fn=init_to_uniform,
+        flow_factory: Callable[..., Transformed] = gaussianization_flow,
+        flow_kwargs: dict[str, Any] | None = None,
+        init_key: PRNGKeyArray | None = None,
+        prefix: str = "auto",
+        init_loc_fn: Callable[..., Any] = init_to_uniform,
     ):
         self._flow_factory = flow_factory
         self._flow_kwargs = flow_kwargs if flow_kwargs is not None else {}

@@ -32,15 +32,27 @@ class CircularRationalQuadraticSpline(AbstractBijection):
     replaces the ``derivatives`` Parameterize with a tied variant — one fewer
     free parameter than the unconstrained spline.
 
-    Shape:
-        Scalar bijection: ``shape == ()``. Use inside a ``Coupling`` or ``Vmap``
-        to apply it to a vector of periodic coordinates.
-
     Args:
         knots: Number of bins.
         bound: Half-width of the periodic interval. Defaults to ``π``.
         min_derivative: Minimum derivative at any knot. Defaults to ``1e-3``.
         min_width: Minimum bin width. Defaults to ``1e-3``.
+
+    Shape:
+        Scalar bijection: ``shape == ()``. Use inside a ``Coupling`` or ``Vmap``
+        to apply it to a vector of periodic coordinates.
+
+        - transform_and_log_det: ``()`` → ``()``, scalar log_det
+        - inverse_and_log_det:   ``()`` → ``()``, scalar log_det
+
+    Example:
+        >>> import jax.numpy as jnp
+        >>> from gauss_flows import CircularRationalQuadraticSpline
+        >>> t = CircularRationalQuadraticSpline(knots=8)  # bound = π
+        >>> x = jnp.array(0.3)  # scalar angle inside [−π, π]
+        >>> y, log_det = t.transform_and_log_det(x)
+        >>> y.shape
+        ()
     """
 
     shape: ClassVar[tuple[int, ...]] = ()
