@@ -132,9 +132,9 @@ test: ## 🧪 Run tests with pytest (with coverage)
 	uv run pytest -v
 	@printf "$(GREEN)>>> ✅ Tests passed!$(RESET)\n"
 
-test-fast: ## 🏃 Run tests, skipping slow-marked tests
-	@printf "$(YELLOW)>>> Running fast tests (no slow)...$(RESET)\n"
-	uv run pytest -v -m "not slow" -o addopts=
+test-fast: ## 🏃 Run fast tests only (skip slow + integration — mirrors CI)
+	@printf "$(YELLOW)>>> Running fast tests (no slow, no integration)...$(RESET)\n"
+	uv run pytest -v -m "not slow and not integration" -o addopts=
 	@printf "$(GREEN)>>> ✅ Fast tests passed!$(RESET)\n"
 
 test-cov: ## 📊 Run tests with coverage report
