@@ -97,8 +97,8 @@ def test_histogram_cdf_forward_inverse(key):
 
 def test_histogram_cdf_matches_gaussian_cdf(key):
     shape = (1,)
-    data = jr.normal(key, (20000, shape[0]))
-    transform = HistogramCDF(n_bins=256, shape=shape).fit(data)
+    data = jr.normal(key, (8000, shape[0]))
+    transform = HistogramCDF(n_bins=128, shape=shape).fit(data)
     points = jnp.linspace(-2.0, 2.0, 21)[:, None]
 
     def _single_cdf(x_point):

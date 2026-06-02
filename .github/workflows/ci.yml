@@ -23,10 +23,12 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
       - name: Run tests with coverage
-        run: uv run pytest -v -m "not slow"
-      - name: Run slow tests (main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: uv run pytest -v -m "slow" --no-cov
+        # Slow + integration tests never run in CI — they exercise training
+        # convergence and end-to-end fit→evaluate paths that are too costly for
+        # Actions. Run them locally with `make test`.
+        # `-n auto` parallelises across runner cores (pytest-xdist); most of the
+        # remaining wall time is per-test JAX compilation, which xdist overlaps.
+        run: uv run pytest -m "not slow and not integration" -n auto
       - name: Upload coverage report
         if: matrix.python-version == '3.12'
         uses: actions/upload-artifact@v7
