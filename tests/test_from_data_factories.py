@@ -65,6 +65,7 @@ class TestMixtureGaussianCDFFromData:
         import jax.numpy as jnp
         import numpy as np
 
+        jax.config.update("jax_enable_x64", True)
         x = jnp.asarray(np.random.default_rng(0).standard_normal((2000, 2)))
         marg = MixtureGaussianCDF.from_data(x, n_components=8)
         y = jax.vmap(marg.transform_and_log_det)(x)[0]

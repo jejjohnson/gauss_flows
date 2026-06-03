@@ -12,6 +12,7 @@ from typing import ClassVar
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import jax.scipy.special as jsp_special
 import jax.scipy.stats as jstats
 from flowjax.bijections import AbstractBijection
 from jax import Array
@@ -134,6 +135,25 @@ class MixtureGaussianCDF(AbstractBijection):
         cdfs = jstats.norm.cdf(x[:, None], loc=means, scale=scales)
         return jnp.sum(weights * cdfs, axis=-1)
 
+    def _gmm_logcdf(
+        self, x: Array, means: Array, scales: Array, weights: Array
+    ) -> Array:
+        """Log CDF of a 1D Gaussian mixture evaluated at x."""
+        log_cdfs = jstats.norm.logcdf(x[:, None], loc=means, scale=scales)
+        return jsp_special.logsumexp(jnp.log(weights) + log_cdfs, axis=-1)
+
+    def _gmm_sf(self, x: Array, means: Array, scales: Array, weights: Array) -> Array:
+        """Survival function of a 1D Gaussian mixture evaluated at x."""
+        sfs = jstats.norm.sf(x[:, None], loc=means, scale=scales)
+        return jnp.sum(weights * sfs, axis=-1)
+
+    def _gmm_logsf(
+        self, x: Array, means: Array, scales: Array, weights: Array
+    ) -> Array:
+        """Log survival function of a 1D Gaussian mixture evaluated at x."""
+        log_sfs = jstats.norm.logsf(x[:, None], loc=means, scale=scales)
+        return jsp_special.logsumexp(jnp.log(weights) + log_sfs, axis=-1)
+
     def _gmm_logpdf(
         self, x: Array, means: Array, scales: Array, weights: Array
     ) -> Array:
@@ -145,12 +165,19 @@ class MixtureGaussianCDF(AbstractBijection):
         x = jnp.asarray(x)
         scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
-        eps = _unit_interval_eps(x)
 
-        # GMM CDF -> uniform -> probit (inverse normal CDF)
-        u = self._gmm_cdf(x, self.means, scales, weights)
-        u = jnp.clip(u, eps, 1 - eps)
-        y = jax.scipy.special.ndtri(u)
+        # Use CDF in the lower tail and survival in the upper tail so the
+        # probit input keeps tail precision instead of saturating at 0/1.
+        log_cdf = self._gmm_logcdf(x, self.means, scales, weights)
+        log_sf = self._gmm_logsf(x, self.means, scales, weights)
+        cdf = jnp.exp(log_cdf)
+        sf = jnp.exp(log_sf)
+        tiny = jnp.asarray(jnp.finfo(x.dtype).tiny, dtype=x.dtype)
+        y = jnp.where(
+            cdf <= 0.5,
+            jax.scipy.special.ndtri(jnp.clip(cdf, tiny, 1.0)),
+            -jax.scipy.special.ndtri(jnp.clip(sf, tiny, 1.0)),
+        )
 
         # Log det: log |dy/dx| = log |phi^{-1}'(u) * gmm_pdf(x)|
         # = log_gmm_pdf(x) - log_norm_pdf(y)
@@ -165,22 +192,40 @@ class MixtureGaussianCDF(AbstractBijection):
         y = jnp.asarray(y)
         scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
-        eps = _unit_interval_eps(y)
 
-        # Probit -> uniform CDF. Clip at machine epsilon for the current dtype
-        # so tail saturation doesn't collapse bisection to the bracket edges.
-        u = jnp.clip(jax.scipy.special.ndtr(y), eps, 1.0 - eps)
+        tiny = jnp.asarray(jnp.finfo(y.dtype).tiny, dtype=y.dtype)
 
-        # Invert GMM CDF: find x such that GMM_CDF(x) = u
-        def _cdf_i(u_i, means_i, scales_i, weights_i):
+        def _invert_lower(ops):
+            y_i, means_i, scales_i, weights_i = ops
+            target = jnp.clip(jax.scipy.special.ndtr(y_i), tiny, 1.0)
+
             def _fn(xi):
                 return self._gmm_cdf(
                     xi[None], means_i[None], scales_i[None], weights_i[None]
                 )[0]
 
-            return bisection_inverse(_fn, u_i)
+            return bisection_inverse(_fn, target)
 
-        x = jax.vmap(_cdf_i)(u, self.means, scales, weights)
+        def _invert_upper(ops):
+            y_i, means_i, scales_i, weights_i = ops
+            target = jnp.clip(jax.scipy.special.ndtr(-y_i), tiny, 1.0)
+
+            def _fn(xi):
+                return -self._gmm_sf(
+                    xi[None], means_i[None], scales_i[None], weights_i[None]
+                )[0]
+
+            return bisection_inverse(_fn, -target)
+
+        def _invert_i(y_i, means_i, scales_i, weights_i):
+            return jax.lax.cond(
+                y_i < 0.0,
+                _invert_lower,
+                _invert_upper,
+                (y_i, means_i, scales_i, weights_i),
+            )
+
+        x = jax.vmap(_invert_i)(y, self.means, scales, weights)
 
         # Log det of inverse = -log_det of forward
         log_pdf_x = self._gmm_logpdf(x, self.means, scales, weights)
