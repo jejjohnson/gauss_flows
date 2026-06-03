@@ -60,6 +60,20 @@ class TestMixtureGaussianCDFFromData:
         x_rec, _ = marg.inverse_and_log_det(y)
         assert jnp.allclose(data_4d[0], x_rec, atol=1e-4)
 
+    def test_tail_roundtrip_stays_stable(self):
+        import jax
+        import jax.numpy as jnp
+        import numpy as np
+
+        x = jnp.asarray(np.random.default_rng(0).standard_normal((2000, 2)))
+        marg = MixtureGaussianCDF.from_data(x, n_components=8)
+        y = jax.vmap(marg.transform_and_log_det)(x)[0]
+        x_rec = jax.vmap(marg.inverse_and_log_det)(y)[0]
+        err = jnp.abs(x - x_rec).max(axis=1)
+        tail_err = err[jnp.max(jnp.abs(x), axis=1) > 2.5]
+        assert jnp.max(err) < 1e-3
+        assert jnp.max(tail_err) < 1e-3
+
     def test_means_match_quantiles(self, data_2d):
         import numpy as np
 

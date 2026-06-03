@@ -19,6 +19,11 @@ from jax.nn import softmax, softplus
 from jaxtyping import ArrayLike
 
 
+def _unit_interval_eps(x: Array) -> Array:
+    """Smallest safe distance from 0/1 for the given floating dtype."""
+    return jnp.asarray(jnp.finfo(x.dtype).eps, dtype=x.dtype)
+
+
 class MixtureGaussianCDF(AbstractBijection):
     """Marginal Gaussianization via a mixture-of-Gaussians CDF.
 
@@ -140,10 +145,11 @@ class MixtureGaussianCDF(AbstractBijection):
         x = jnp.asarray(x)
         scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
+        eps = _unit_interval_eps(x)
 
         # GMM CDF -> uniform -> probit (inverse normal CDF)
         u = self._gmm_cdf(x, self.means, scales, weights)
-        u = jnp.clip(u, 1e-6, 1 - 1e-6)
+        u = jnp.clip(u, eps, 1 - eps)
         y = jax.scipy.special.ndtri(u)
 
         # Log det: log |dy/dx| = log |phi^{-1}'(u) * gmm_pdf(x)|
@@ -159,12 +165,11 @@ class MixtureGaussianCDF(AbstractBijection):
         y = jnp.asarray(y)
         scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
+        eps = _unit_interval_eps(y)
 
-        # Probit -> uniform CDF. Clip so float32 tail saturation
-        # (|y| >~ 5 gives ndtr(y) ∈ {0, 1}) doesn't collapse bisection
-        # to the [-100, 100] bounds, which would otherwise produce
-        # ray/X-pattern artifacts in samples.
-        u = jnp.clip(jax.scipy.special.ndtr(y), 1e-6, 1.0 - 1e-6)
+        # Probit -> uniform CDF. Clip at machine epsilon for the current dtype
+        # so tail saturation doesn't collapse bisection to the bracket edges.
+        u = jnp.clip(jax.scipy.special.ndtr(y), eps, 1.0 - eps)
 
         # Invert GMM CDF: find x such that GMM_CDF(x) = u
         def _cdf_i(u_i, means_i, scales_i, weights_i):
@@ -250,9 +255,10 @@ class MixtureLogisticCDF(AbstractBijection):
         x = jnp.asarray(x)
         scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
+        eps = _unit_interval_eps(x)
 
         u = self._mixture_cdf(x, self.means, scales, weights)
-        u = jnp.clip(u, 1e-6, 1 - 1e-6)
+        u = jnp.clip(u, eps, 1 - eps)
         y = jax.scipy.special.ndtri(u)
 
         log_pdf_x = self._mixture_logpdf(x, self.means, scales, weights)
@@ -266,8 +272,9 @@ class MixtureLogisticCDF(AbstractBijection):
         y = jnp.asarray(y)
         scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
+        eps = _unit_interval_eps(y)
 
-        u = jnp.clip(jax.scipy.special.ndtr(y), 1e-6, 1.0 - 1e-6)
+        u = jnp.clip(jax.scipy.special.ndtr(y), eps, 1.0 - eps)
 
         def _cdf_i(u_i, means_i, scales_i, weights_i):
             def _fn(xi):
