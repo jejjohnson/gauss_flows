@@ -20,11 +20,6 @@ from jax.nn import softmax, softplus
 from jaxtyping import ArrayLike
 
 
-def _unit_interval_eps(x: Array) -> Array:
-    """Smallest safe distance from 0/1 for the given floating dtype."""
-    return jnp.asarray(jnp.finfo(x.dtype).eps, dtype=x.dtype)
-
-
 def _ndtri_exp(log_p: Array, n_iter: int = 8) -> Array:
     """Probit ``ndtri(exp(log_p))`` evaluated from the log-probability directly.
 
@@ -174,8 +169,12 @@ class MixtureGaussianCDF(AbstractBijection):
         self, x: Array, means: Array, scales: Array, weights: Array
     ) -> Array:
         """Log PDF of a 1D Gaussian mixture evaluated at x."""
+        # logsumexp (not log(sum(exp(...)) + eps)) so the log-density stays exact
+        # in the tails: exponentiating first underflows to 0 once the component
+        # logpdfs drop below ~-87 (float32), flooring log_pdf_x and corrupting
+        # the log-det for the very tail samples this bijector is meant to keep.
         log_pdfs = jstats.norm.logpdf(x[:, None], loc=means, scale=scales)
-        return jnp.log(jnp.sum(weights * jnp.exp(log_pdfs), axis=-1) + 1e-38)
+        return jsp_special.logsumexp(jnp.log(weights) + log_pdfs, axis=-1)
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
         x = jnp.asarray(x)
@@ -317,10 +316,9 @@ class MixtureLogisticCDF(AbstractBijection):
         x = jnp.asarray(x)
         scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
-        eps = _unit_interval_eps(x)
 
         u = self._mixture_cdf(x, self.means, scales, weights)
-        u = jnp.clip(u, eps, 1 - eps)
+        u = jnp.clip(u, 1e-6, 1 - 1e-6)
         y = jax.scipy.special.ndtri(u)
 
         log_pdf_x = self._mixture_logpdf(x, self.means, scales, weights)
@@ -334,9 +332,8 @@ class MixtureLogisticCDF(AbstractBijection):
         y = jnp.asarray(y)
         scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
-        eps = _unit_interval_eps(y)
 
-        u = jnp.clip(jax.scipy.special.ndtr(y), eps, 1.0 - eps)
+        u = jnp.clip(jax.scipy.special.ndtr(y), 1e-6, 1.0 - 1e-6)
 
         def _cdf_i(u_i, means_i, scales_i, weights_i):
             def _fn(xi):
