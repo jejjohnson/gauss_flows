@@ -12,11 +12,38 @@ from typing import ClassVar
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import jax.scipy.special as jsp_special
 import jax.scipy.stats as jstats
 from flowjax.bijections import AbstractBijection
 from jax import Array
 from jax.nn import softmax, softplus
 from jaxtyping import ArrayLike
+
+
+def _ndtri_exp(log_p: Array, n_iter: int = 8) -> Array:
+    """Probit ``ndtri(exp(log_p))`` evaluated from the log-probability directly.
+
+    Computing ``ndtri(jnp.exp(log_p))`` discards all tail precision the moment
+    ``exp(log_p)`` underflows: in float32 anything below ``finfo.tiny`` (~1e-38)
+    collapses to the smallest normal, capping the probit at ~±12.9 and mapping
+    every deep-tail sample to the same value. Instead solve ``log_ndtr(y) =
+    log_p`` with Newton's method on the tail-stable ``log_ndtr``; the derivative
+    is the inverse Mills ratio ``phi(y) / Phi(y) = exp(logpdf(y) - log_ndtr(y))``.
+
+    ``log_p`` must be ``<= log(0.5)`` (i.e. the smaller of log-CDF/log-SF) so the
+    initial probit guess stays finite.
+    """
+    dtype = log_p.dtype
+    tiny = jnp.asarray(jnp.finfo(dtype).tiny, dtype=dtype)
+    y = jax.scipy.special.ndtri(jnp.clip(jnp.exp(log_p), tiny, 1.0))
+
+    def _step(_, y):
+        log_ndtr = jax.scipy.special.log_ndtr(y)
+        f = log_ndtr - log_p
+        df = jnp.exp(jstats.norm.logpdf(y) - log_ndtr)
+        return y - f / df
+
+    return jax.lax.fori_loop(0, n_iter, _step, y)
 
 
 class MixtureGaussianCDF(AbstractBijection):
@@ -124,27 +151,47 @@ class MixtureGaussianCDF(AbstractBijection):
         obj = eqx.tree_at(lambda m: m.log_scales, obj, log_scales)
         return obj
 
-    def _gmm_cdf(self, x: Array, means: Array, scales: Array, weights: Array) -> Array:
-        """CDF of a 1D Gaussian mixture evaluated at x."""
-        cdfs = jstats.norm.cdf(x[:, None], loc=means, scale=scales)
-        return jnp.sum(weights * cdfs, axis=-1)
+    def _gmm_logcdf(
+        self, x: Array, means: Array, scales: Array, weights: Array
+    ) -> Array:
+        """Log CDF of a 1D Gaussian mixture evaluated at x."""
+        log_cdfs = jstats.norm.logcdf(x[:, None], loc=means, scale=scales)
+        return jsp_special.logsumexp(jnp.log(weights) + log_cdfs, axis=-1)
+
+    def _gmm_logsf(
+        self, x: Array, means: Array, scales: Array, weights: Array
+    ) -> Array:
+        """Log survival function of a 1D Gaussian mixture evaluated at x."""
+        log_sfs = jstats.norm.logsf(x[:, None], loc=means, scale=scales)
+        return jsp_special.logsumexp(jnp.log(weights) + log_sfs, axis=-1)
 
     def _gmm_logpdf(
         self, x: Array, means: Array, scales: Array, weights: Array
     ) -> Array:
         """Log PDF of a 1D Gaussian mixture evaluated at x."""
+        # logsumexp (not log(sum(exp(...)) + eps)) so the log-density stays exact
+        # in the tails: exponentiating first underflows to 0 once the component
+        # logpdfs drop below ~-87 (float32), flooring log_pdf_x and corrupting
+        # the log-det for the very tail samples this bijector is meant to keep.
         log_pdfs = jstats.norm.logpdf(x[:, None], loc=means, scale=scales)
-        return jnp.log(jnp.sum(weights * jnp.exp(log_pdfs), axis=-1) + 1e-38)
+        return jsp_special.logsumexp(jnp.log(weights) + log_pdfs, axis=-1)
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
         x = jnp.asarray(x)
         scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
 
-        # GMM CDF -> uniform -> probit (inverse normal CDF)
-        u = self._gmm_cdf(x, self.means, scales, weights)
-        u = jnp.clip(u, 1e-6, 1 - 1e-6)
-        y = jax.scipy.special.ndtri(u)
+        # GMM CDF -> uniform -> probit, done entirely in log-space. Take the
+        # probit of whichever tail is smaller (log-CDF in the lower tail,
+        # log-SF in the upper) and feed the *log*-probability straight into the
+        # probit via `_ndtri_exp`. Exponentiating first underflows in the tails
+        # (float32 caps the probit near ±12.9), collapsing distinct tail samples
+        # onto the same y and destroying invertibility.
+        log_cdf = self._gmm_logcdf(x, self.means, scales, weights)
+        log_sf = self._gmm_logsf(x, self.means, scales, weights)
+        lower = log_cdf <= log_sf
+        mag = _ndtri_exp(jnp.where(lower, log_cdf, log_sf))
+        y = jnp.where(lower, mag, -mag)
 
         # Log det: log |dy/dx| = log |phi^{-1}'(u) * gmm_pdf(x)|
         # = log_gmm_pdf(x) - log_norm_pdf(y)
@@ -160,22 +207,41 @@ class MixtureGaussianCDF(AbstractBijection):
         scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
 
-        # Probit -> uniform CDF. Clip so float32 tail saturation
-        # (|y| >~ 5 gives ndtr(y) ∈ {0, 1}) doesn't collapse bisection
-        # to the [-100, 100] bounds, which would otherwise produce
-        # ray/X-pattern artifacts in samples.
-        u = jnp.clip(jax.scipy.special.ndtr(y), 1e-6, 1.0 - 1e-6)
+        # Invert in log-space to mirror the forward pass: solve
+        # log-CDF(x) = log Φ(y) in the lower tail and log-SF(x) = log Φ(-y) in
+        # the upper tail. Bracketing on the linear CDF/SF target would underflow
+        # for |y| ≳ 5.5 in float32 and collapse the bisection onto the bounds.
+        def _invert_lower(ops):
+            y_i, means_i, scales_i, weights_i = ops
+            target = jax.scipy.special.log_ndtr(y_i)
 
-        # Invert GMM CDF: find x such that GMM_CDF(x) = u
-        def _cdf_i(u_i, means_i, scales_i, weights_i):
             def _fn(xi):
-                return self._gmm_cdf(
+                return self._gmm_logcdf(
                     xi[None], means_i[None], scales_i[None], weights_i[None]
                 )[0]
 
-            return bisection_inverse(_fn, u_i)
+            return bisection_inverse(_fn, target)
 
-        x = jax.vmap(_cdf_i)(u, self.means, scales, weights)
+        def _invert_upper(ops):
+            y_i, means_i, scales_i, weights_i = ops
+            target = jax.scipy.special.log_ndtr(-y_i)
+
+            def _fn(xi):
+                return -self._gmm_logsf(
+                    xi[None], means_i[None], scales_i[None], weights_i[None]
+                )[0]
+
+            return bisection_inverse(_fn, -target)
+
+        def _invert_i(y_i, means_i, scales_i, weights_i):
+            return jax.lax.cond(
+                y_i < 0.0,
+                _invert_lower,
+                _invert_upper,
+                (y_i, means_i, scales_i, weights_i),
+            )
+
+        x = jax.vmap(_invert_i)(y, self.means, scales, weights)
 
         # Log det of inverse = -log_det of forward
         log_pdf_x = self._gmm_logpdf(x, self.means, scales, weights)
