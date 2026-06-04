@@ -126,6 +126,32 @@ def test_gdn_diagonal_gamma_does_not_bound_output(key):
         assert jnp.max(jnp.abs(y - y_check)) < 1e-8
 
 
+def test_gdn_inverse_nan_outside_support(key):
+    """Out-of-support targets surface as NaN, not silently-wrong finite values.
+
+    With positive coupling GDN's joint range is bounded; a target outside it has
+    no preimage. The inverse verifies ``forward(x*) ≈ y`` and NaNs the result
+    otherwise, so ``log_prob`` / ``sample`` flag out-of-support instead of
+    returning plausible-but-wrong numbers.
+    """
+    with x64_enabled():
+        layer = GeneralizedDivisiveNormalization1D(
+            shape=(2,), inverse_tol=1e-12, inverse_max_iters=300
+        )
+        # Strong off-diagonal coupling -> small invertible region.
+        layer = eqx.tree_at(lambda t: t.raw_gamma, layer, jnp.zeros((2, 2)))
+
+        y_ok = jnp.array([0.3, -0.2])
+        x_ok, ld_ok = layer.inverse_and_log_det(y_ok)
+        assert jnp.all(jnp.isfinite(x_ok))
+        assert jnp.isfinite(ld_ok)
+        assert jnp.allclose(layer.transform_and_log_det(x_ok)[0], y_ok, atol=1e-8)
+
+        x_bad, ld_bad = layer.inverse_and_log_det(jnp.array([5.0, -5.0]))
+        assert jnp.all(jnp.isnan(x_bad))
+        assert jnp.isnan(ld_bad)
+
+
 def test_gdn_forward_inverse_float64_precision(key):
     """Round-trip is exact to ``< 1e-10`` in float64 with a tight tolerance."""
     with x64_enabled():

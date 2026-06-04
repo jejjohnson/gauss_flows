@@ -158,6 +158,18 @@ def _inverse(
         )
     )(jnp.reshape(y, (-1, c)))
     x = jnp.reshape(x_flat, jnp.shape(y))
+
+    # GDN is invertible only onto its image: with positive coupling the joint
+    # range is bounded, so a target outside it has no preimage and the fixed
+    # point would otherwise return a silently-wrong finite value. Verify the
+    # recovered point actually maps back to y and NaN whole channel vectors that
+    # do not — out-of-support targets then surface as NaN log_prob / samples
+    # instead of plausible-but-wrong numbers.
+    y_recon = x / _denom(x, beta, gamma)
+    resid = jnp.max(jnp.abs(y_recon - y), axis=-1, keepdims=True)
+    threshold = 1e-3 * (1.0 + jnp.max(jnp.abs(y), axis=-1, keepdims=True))
+    x = jnp.where(resid <= threshold, x, jnp.asarray(jnp.nan, dtype=x.dtype))
+
     logdet, sign = _logdet_sum(x, beta, gamma)
     return x, -logdet, sign
 
@@ -204,9 +216,12 @@ class GeneralizedDivisiveNormalization(AbstractBijection):
     The inverse runs a damped fixed point with an implicit-function-theorem
     ``custom_vjp``, so backprop through ``inverse`` / ``sample`` is exact.
 
-    Like any divisive-normalization flow, GDN is invertible within a contraction
-    regime (modest coupling); very strong ``gamma`` can make the fixed point
-    diverge, so keep the coupling moderate (or regularize its spectral norm).
+    Like any divisive-normalization flow, GDN is a diffeomorphism only onto its
+    image, not all of R^D: with positive coupling the joint range is bounded, so
+    keep the coupling moderate (or regularize its spectral norm). A target outside
+    the image has no preimage; ``inverse_and_log_det`` verifies ``forward(x*) ≈ y``
+    and returns NaN for such targets rather than a silently-wrong finite value, so
+    out-of-support points surface as NaN ``log_prob`` / samples.
 
     Args:
         shape: Event shape ``(..., C)``; the last axis is the channel axis.
