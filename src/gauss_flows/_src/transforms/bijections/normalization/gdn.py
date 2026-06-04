@@ -175,6 +175,23 @@ def _init_raw(c: int, beta_floor: float) -> tuple[Array, Array]:
     return raw_beta, raw_gamma
 
 
+def _validate_controls(
+    beta_floor: float,
+    inverse_max_iters: int,
+    inverse_tol: float,
+    inverse_damping: float,
+) -> None:
+    """Reject constructor controls that would silently break forward/inverse."""
+    if beta_floor < 0.0:
+        raise ValueError("beta_floor must be non-negative (keeps beta > 0).")
+    if inverse_max_iters < 1:
+        raise ValueError("inverse_max_iters must be a positive integer.")
+    if inverse_tol <= 0.0:
+        raise ValueError("inverse_tol must be positive.")
+    if not 0.0 < inverse_damping <= 1.0:
+        raise ValueError("inverse_damping must be in (0, 1].")
+
+
 class GeneralizedDivisiveNormalization(AbstractBijection):
     """Generalized divisive normalization for image-shaped events ``(..., C)``.
 
@@ -234,6 +251,7 @@ class GeneralizedDivisiveNormalization(AbstractBijection):
         inverse_tol: float = 1e-6,
         inverse_damping: float = 0.5,
     ):
+        _validate_controls(beta_floor, inverse_max_iters, inverse_tol, inverse_damping)
         self.shape = shape
         self.symmetric_gamma = symmetric_gamma
         self.beta_floor = beta_floor
@@ -332,6 +350,7 @@ class GeneralizedDivisiveNormalization1D(AbstractBijection):
             raise ValueError(
                 "GeneralizedDivisiveNormalization1D only supports 1D inputs."
             )
+        _validate_controls(beta_floor, inverse_max_iters, inverse_tol, inverse_damping)
         self.shape = shape
         self.symmetric_gamma = symmetric_gamma
         self.beta_floor = beta_floor

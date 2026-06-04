@@ -56,6 +56,19 @@ def test_gdn_shape_1d(key):
         GeneralizedDivisiveNormalization1D(shape=(4, 4, 3))
 
 
+def test_gdn_rejects_invalid_controls():
+    """Constructor validates fixed-point / floor controls instead of silently
+    storing values that would corrupt forward/inverse."""
+    with pytest.raises(ValueError, match="beta_floor"):
+        GeneralizedDivisiveNormalization1D(shape=(3,), beta_floor=-1e-3)
+    with pytest.raises(ValueError, match="inverse_damping"):
+        GeneralizedDivisiveNormalization1D(shape=(3,), inverse_damping=0.0)
+    with pytest.raises(ValueError, match="inverse_damping"):
+        GeneralizedDivisiveNormalization1D(shape=(3,), inverse_damping=1.5)
+    with pytest.raises(ValueError, match="beta_floor"):
+        GeneralizedDivisiveNormalization(shape=(4, 4, 3), beta_floor=-1.0)
+
+
 def test_gdn_forward_inverse_1d(key):
     """``f^{-1}(f(x)) ≈ x`` for the 1-D variant; slogdet sign stays positive."""
     layer = GeneralizedDivisiveNormalization1D(shape=(4,))
