@@ -182,9 +182,14 @@ class GeneralizedDivisiveNormalization(AbstractBijection):
     leading spatial axes, so the dense log-det is O(C^3) per spatial position
     rather than O((H*W*C)^3). Parameters use the project's positive
     reparameterization: ``beta = softplus(raw_beta) + beta_floor`` (``> 0``) and
-    ``gamma = softplus(raw_gamma)`` (``>= 0``), optionally symmetrized. The inverse
-    runs a damped fixed point with an implicit-function-theorem ``custom_vjp``, so
-    backprop through ``inverse`` / ``sample`` is exact.
+    ``gamma = softplus(raw_gamma)`` (``>= 0``, off-diagonal only — the diagonal is
+    held at zero so each coordinate is not self-bounded), optionally symmetrized.
+    The inverse runs a damped fixed point with an implicit-function-theorem
+    ``custom_vjp``, so backprop through ``inverse`` / ``sample`` is exact.
+
+    Like any divisive-normalization flow, GDN is invertible within a contraction
+    regime (modest coupling); very strong ``gamma`` can make the fixed point
+    diverge, so keep the coupling moderate (or regularize its spectral norm).
 
     Args:
         shape: Event shape ``(..., C)``; the last axis is the channel axis.
@@ -242,6 +247,13 @@ class GeneralizedDivisiveNormalization(AbstractBijection):
         gamma = softplus(self.raw_gamma)
         if self.symmetric_gamma:
             gamma = 0.5 * (gamma + gamma.T)
+        # Hold the diagonal at zero: a positive gamma_ii would let a coordinate
+        # divide by its own energy, capping |y_i| < 1 / sqrt(gamma_ii). The
+        # forward map would then land in a bounded box rather than all of R^D,
+        # so it would not be a bijection and out-of-box targets would have no
+        # preimage for the inverse fixed point. Cross-coordinate (off-diagonal)
+        # gain control is what GDN is for; the self-term is dropped.
+        gamma = gamma * (1.0 - jnp.eye(gamma.shape[-1], dtype=gamma.dtype))
         return beta, gamma
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):
@@ -333,6 +345,13 @@ class GeneralizedDivisiveNormalization1D(AbstractBijection):
         gamma = softplus(self.raw_gamma)
         if self.symmetric_gamma:
             gamma = 0.5 * (gamma + gamma.T)
+        # Hold the diagonal at zero: a positive gamma_ii would let a coordinate
+        # divide by its own energy, capping |y_i| < 1 / sqrt(gamma_ii). The
+        # forward map would then land in a bounded box rather than all of R^D,
+        # so it would not be a bijection and out-of-box targets would have no
+        # preimage for the inverse fixed point. Cross-coordinate (off-diagonal)
+        # gain control is what GDN is for; the self-term is dropped.
+        gamma = gamma * (1.0 - jnp.eye(gamma.shape[-1], dtype=gamma.dtype))
         return beta, gamma
 
     def transform_and_log_det(self, x: ArrayLike, condition=None):

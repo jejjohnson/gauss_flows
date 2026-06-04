@@ -82,6 +82,37 @@ def test_gdn_forward_inverse_image(key):
     assert jnp.allclose(log_det + log_det_inv, 0.0, atol=1e-5)
 
 
+def test_gdn_diagonal_gamma_does_not_bound_output(key):
+    """A positive diagonal must not cap ``|y_i|``: the diagonal is held at zero.
+
+    With ``gamma_ii > 0`` the forward map would satisfy ``|y_i| < 1/sqrt(gamma_ii)``,
+    bounding the range and leaving out-of-box targets with no preimage. Masking the
+    diagonal keeps the map onto all of R^D, so far-out targets still round-trip.
+    """
+    with x64_enabled():
+        layer = GeneralizedDivisiveNormalization1D(
+            shape=(2,), inverse_tol=1e-12, inverse_max_iters=300
+        )
+        # Large diagonal (softplus(2) ~ 2.13) would cap |y| < 0.68 if it counted;
+        # off-diagonal coupling stays modest.
+        raw_gamma = jnp.array([[2.0, -3.0], [-3.0, 2.0]])
+        layer = eqx.tree_at(lambda t: t.raw_gamma, layer, raw_gamma)
+
+        _, gamma = layer._params()
+        assert jnp.allclose(jnp.diag(gamma), 0.0)
+
+        # Forward of a large input is unbounded (would saturate near 0.68 if the
+        # diagonal counted).
+        y_big, _ = layer.transform_and_log_det(jnp.array([50.0, 0.0]))
+        assert jnp.abs(y_big[0]) > 5.0
+
+        # A target far outside the would-be box still inverts and round-trips.
+        y = jnp.array([3.0, -1.5])
+        x_rec, _ = layer.inverse_and_log_det(y)
+        y_check, _ = layer.transform_and_log_det(x_rec)
+        assert jnp.max(jnp.abs(y - y_check)) < 1e-8
+
+
 def test_gdn_forward_inverse_float64_precision(key):
     """Round-trip is exact to ``< 1e-10`` in float64 with a tight tolerance."""
     with x64_enabled():
