@@ -50,6 +50,8 @@ from gauss_flows._src.transforms.bijections.normalization import (
     ActNorm,
     ActNorm1D,
     BatchNorm,
+    GeneralizedDivisiveNormalization,
+    GeneralizedDivisiveNormalization1D,
 )
 from gauss_flows._src.transforms.bijections.periodic import PeriodicShift, PeriodicWrap
 from gauss_flows._src.transforms.bijections.reshape import Squeeze
@@ -68,6 +70,8 @@ __all__ = [
     "DeepSigmoidCoupling",
     "FixedRotation",
     "GINCoupling",
+    "GeneralizedDivisiveNormalization",
+    "GeneralizedDivisiveNormalization1D",
     "HaarWavelet",
     "HistogramCDF",
     "HouseholderRotation",
