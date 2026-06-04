@@ -202,3 +202,55 @@ def test_histogram_cdf_grad_through_knots(key):
     # Gradient should be nonzero — perturbing the CDF knots must change the
     # forward output.
     assert jnp.any(jnp.abs(g) > 0)
+
+
+def test_mixture_gaussian_cdf_inverse_grad_matches_implicit(key):
+    """``jax.grad`` through ``.inverse`` recovers the implicit-function value.
+
+    The bisection solver is unrolled, so a naive implementation has an
+    identically-zero gradient; the one-step Newton correction restores
+    ``dx*/dy = 1 / F'(x*)``.
+    """
+    data = jr.normal(key, (2000, 1))
+    b = MixtureGaussianCDF.from_data(data, n_components=6)
+    y = jnp.array([0.7])
+
+    g_inv = jax.grad(lambda yy: b.inverse(yy).sum())(y)[0]
+    x_star = b.inverse(y)
+    expected = 1.0 / jax.grad(lambda xx: b.transform(xx).sum())(x_star)[0]
+
+    assert jnp.abs(g_inv) > 1e-3  # not the broken zero gradient
+    assert jnp.allclose(g_inv, expected, rtol=1e-3)
+
+
+def test_mixture_logistic_cdf_inverse_grad_matches_implicit(key):
+    """Same implicit-gradient guarantee for the logistic-mixture inverse."""
+    b = MixtureLogisticCDF(n_components=6, shape=(1,))
+    y = jnp.array([0.7])
+
+    g_inv = jax.grad(lambda yy: b.inverse(yy).sum())(y)[0]
+    x_star = b.inverse(y)
+    expected = 1.0 / jax.grad(lambda xx: b.transform(xx).sum())(x_star)[0]
+
+    assert jnp.abs(g_inv) > 1e-3
+    assert jnp.allclose(g_inv, expected, rtol=1e-3)
+
+
+def test_mixture_gaussian_cdf_inverse_grad_through_params(key):
+    """``jax.grad`` through ``.inverse`` flows to the bijector parameters.
+
+    Backprop through ``sample`` / ``inverse`` (e.g. reparameterised objectives)
+    needs nonzero parameter gradients; the unrolled bisection alone gives zero.
+    """
+    data = jr.normal(key, (2000, 1))
+    b = MixtureGaussianCDF.from_data(data, n_components=6)
+    ys = jnp.array([[-1.3], [0.2], [0.7], [2.1]])
+
+    def loss(log_scales):
+        perturbed = eqx.tree_at(lambda t: t.log_scales, b, log_scales)
+        return jax.vmap(perturbed.inverse)(ys).sum()
+
+    g = jax.grad(loss)(b.log_scales)
+    assert g.shape == b.log_scales.shape
+    assert jnp.all(jnp.isfinite(g))
+    assert jnp.any(jnp.abs(g) > 1e-4)

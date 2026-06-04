@@ -26,17 +26,32 @@ def bisection_inverse(
     upper: float = 100.0,
     n_iter: int = 50,
 ) -> Array:
-    """Compute the inverse of a monotone function using bisection.
+    """Invert a monotone function, differentiable via the implicit function theorem.
+
+    Brackets the root with an expanding bisection (cheap, derivative-free, robust)
+    and then appends a single Newton step from the *detached* root so reverse-mode
+    AD is correct. A bare unrolled bisection returns the right value but a **zero
+    gradient**: its output depends on the inputs only through piecewise-constant
+    ``where(fn(mid) < y, ...)`` comparisons, so ``jax.grad`` through it is
+    identically ``0`` w.r.t. both ``y`` and any parameters ``fn`` closes over.
+
+    The Newton step ``x* - (fn(x*) - y) / fn'(x*)`` with ``x*`` detached leaves the
+    value unchanged to bracket precision (``fn(x*) ≈ y``) while making the output
+    depend smoothly on the inputs, recovering the exact implicit-function gradients
+
+        dx/dy = 1 / fn'(x*)      and      dx/dθ = -∂_θ fn(x*) / fn'(x*).
 
     Args:
-        fn: Monotone increasing function to invert.
-        y: Target values.
-        lower: Lower bound for bisection. Defaults to -100.0.
-        upper: Upper bound for bisection. Defaults to 100.0.
+        fn: Monotone (increasing) function to invert, applied element-wise. May
+            close over differentiable parameters.
+        y: Target value(s).
+        lower: Initial lower bracket; expanded automatically if it does not
+            bracket the root. Defaults to -100.0.
+        upper: Initial upper bracket; likewise expanded. Defaults to 100.0.
         n_iter: Number of bisection iterations. Defaults to 50.
 
     Returns:
-        Approximate inverse values x such that fn(x) ≈ y.
+        Approximate inverse value(s) ``x`` such that ``fn(x) ≈ y``.
     """
     y = jnp.asarray(y, dtype=float)
 
@@ -63,4 +78,14 @@ def bisection_inverse(
         return lo, hi
 
     lo, hi = jax.lax.fori_loop(0, n_iter, _step, (lo, hi))
-    return (lo + hi) / 2.0
+
+    # One Newton step from the detached root attaches the exact implicit-function
+    # gradient to an otherwise piecewise-constant (zero-gradient) bisection. The
+    # value is unchanged to bracket precision: fn(x*) ≈ y so the correction is
+    # ~the bracket width. df underflows to 0 only deep in a flat tail; guard it so
+    # the value falls back to x* there instead of dividing by zero.
+    x_star = jax.lax.stop_gradient((lo + hi) / 2.0)
+    f_star, df_star = jax.jvp(fn, (x_star,), (jnp.ones_like(x_star),))
+    safe = df_star != 0.0
+    correction = jnp.where(safe, (f_star - y) / jnp.where(safe, df_star, 1.0), 0.0)
+    return x_star - correction
