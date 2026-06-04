@@ -25,6 +25,32 @@ def _unit_interval_eps(x: Array) -> Array:
     return jnp.asarray(jnp.finfo(x.dtype).eps, dtype=x.dtype)
 
 
+def _ndtri_exp(log_p: Array, n_iter: int = 8) -> Array:
+    """Probit ``ndtri(exp(log_p))`` evaluated from the log-probability directly.
+
+    Computing ``ndtri(jnp.exp(log_p))`` discards all tail precision the moment
+    ``exp(log_p)`` underflows: in float32 anything below ``finfo.tiny`` (~1e-38)
+    collapses to the smallest normal, capping the probit at ~±12.9 and mapping
+    every deep-tail sample to the same value. Instead solve ``log_ndtr(y) =
+    log_p`` with Newton's method on the tail-stable ``log_ndtr``; the derivative
+    is the inverse Mills ratio ``phi(y) / Phi(y) = exp(logpdf(y) - log_ndtr(y))``.
+
+    ``log_p`` must be ``<= log(0.5)`` (i.e. the smaller of log-CDF/log-SF) so the
+    initial probit guess stays finite.
+    """
+    dtype = log_p.dtype
+    tiny = jnp.asarray(jnp.finfo(dtype).tiny, dtype=dtype)
+    y = jax.scipy.special.ndtri(jnp.clip(jnp.exp(log_p), tiny, 1.0))
+
+    def _step(_, y):
+        log_ndtr = jax.scipy.special.log_ndtr(y)
+        f = log_ndtr - log_p
+        df = jnp.exp(jstats.norm.logpdf(y) - log_ndtr)
+        return y - f / df
+
+    return jax.lax.fori_loop(0, n_iter, _step, y)
+
+
 class MixtureGaussianCDF(AbstractBijection):
     """Marginal Gaussianization via a mixture-of-Gaussians CDF.
 
@@ -130,22 +156,12 @@ class MixtureGaussianCDF(AbstractBijection):
         obj = eqx.tree_at(lambda m: m.log_scales, obj, log_scales)
         return obj
 
-    def _gmm_cdf(self, x: Array, means: Array, scales: Array, weights: Array) -> Array:
-        """CDF of a 1D Gaussian mixture evaluated at x."""
-        cdfs = jstats.norm.cdf(x[:, None], loc=means, scale=scales)
-        return jnp.sum(weights * cdfs, axis=-1)
-
     def _gmm_logcdf(
         self, x: Array, means: Array, scales: Array, weights: Array
     ) -> Array:
         """Log CDF of a 1D Gaussian mixture evaluated at x."""
         log_cdfs = jstats.norm.logcdf(x[:, None], loc=means, scale=scales)
         return jsp_special.logsumexp(jnp.log(weights) + log_cdfs, axis=-1)
-
-    def _gmm_sf(self, x: Array, means: Array, scales: Array, weights: Array) -> Array:
-        """Survival function of a 1D Gaussian mixture evaluated at x."""
-        sfs = jstats.norm.sf(x[:, None], loc=means, scale=scales)
-        return jnp.sum(weights * sfs, axis=-1)
 
     def _gmm_logsf(
         self, x: Array, means: Array, scales: Array, weights: Array
@@ -166,18 +182,17 @@ class MixtureGaussianCDF(AbstractBijection):
         scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
 
-        # Use CDF in the lower tail and survival in the upper tail so the
-        # probit input keeps tail precision instead of saturating at 0/1.
+        # GMM CDF -> uniform -> probit, done entirely in log-space. Take the
+        # probit of whichever tail is smaller (log-CDF in the lower tail,
+        # log-SF in the upper) and feed the *log*-probability straight into the
+        # probit via `_ndtri_exp`. Exponentiating first underflows in the tails
+        # (float32 caps the probit near ±12.9), collapsing distinct tail samples
+        # onto the same y and destroying invertibility.
         log_cdf = self._gmm_logcdf(x, self.means, scales, weights)
         log_sf = self._gmm_logsf(x, self.means, scales, weights)
-        cdf = jnp.exp(log_cdf)
-        sf = jnp.exp(log_sf)
-        tiny = jnp.asarray(jnp.finfo(x.dtype).tiny, dtype=x.dtype)
-        y = jnp.where(
-            cdf <= 0.5,
-            jax.scipy.special.ndtri(jnp.clip(cdf, tiny, 1.0)),
-            -jax.scipy.special.ndtri(jnp.clip(sf, tiny, 1.0)),
-        )
+        lower = log_cdf <= log_sf
+        mag = _ndtri_exp(jnp.where(lower, log_cdf, log_sf))
+        y = jnp.where(lower, mag, -mag)
 
         # Log det: log |dy/dx| = log |phi^{-1}'(u) * gmm_pdf(x)|
         # = log_gmm_pdf(x) - log_norm_pdf(y)
@@ -193,14 +208,16 @@ class MixtureGaussianCDF(AbstractBijection):
         scales = self._scales()
         weights = softmax(self.log_weights, axis=-1)
 
-        tiny = jnp.asarray(jnp.finfo(y.dtype).tiny, dtype=y.dtype)
-
+        # Invert in log-space to mirror the forward pass: solve
+        # log-CDF(x) = log Φ(y) in the lower tail and log-SF(x) = log Φ(-y) in
+        # the upper tail. Bracketing on the linear CDF/SF target would underflow
+        # for |y| ≳ 5.5 in float32 and collapse the bisection onto the bounds.
         def _invert_lower(ops):
             y_i, means_i, scales_i, weights_i = ops
-            target = jnp.clip(jax.scipy.special.ndtr(y_i), tiny, 1.0)
+            target = jax.scipy.special.log_ndtr(y_i)
 
             def _fn(xi):
-                return self._gmm_cdf(
+                return self._gmm_logcdf(
                     xi[None], means_i[None], scales_i[None], weights_i[None]
                 )[0]
 
@@ -208,10 +225,10 @@ class MixtureGaussianCDF(AbstractBijection):
 
         def _invert_upper(ops):
             y_i, means_i, scales_i, weights_i = ops
-            target = jnp.clip(jax.scipy.special.ndtr(-y_i), tiny, 1.0)
+            target = jax.scipy.special.log_ndtr(-y_i)
 
             def _fn(xi):
-                return -self._gmm_sf(
+                return -self._gmm_logsf(
                     xi[None], means_i[None], scales_i[None], weights_i[None]
                 )[0]
 

@@ -60,13 +60,14 @@ class TestMixtureGaussianCDFFromData:
         x_rec, _ = marg.inverse_and_log_det(y)
         assert jnp.allclose(data_4d[0], x_rec, atol=1e-4)
 
-    def test_tail_roundtrip_stays_stable(self):
+    def test_tail_roundtrip_stays_stable(self, key):
         import jax
-        import jax.numpy as jnp
-        import numpy as np
 
-        jax.config.update("jax_enable_x64", True)
-        x = jnp.asarray(np.random.default_rng(0).standard_normal((2000, 2)))
+        # Tail-heavy sample: the round-trip must stay accurate for |x| > 2.5,
+        # where the older clip/exp path saturated the probit and collapsed
+        # distinct tail values onto the same y. Runs in the default float32 to
+        # guard the precision users actually get (no jax_enable_x64).
+        x = jr.normal(key, (2000, 2))
         marg = MixtureGaussianCDF.from_data(x, n_components=8)
         y = jax.vmap(marg.transform_and_log_det)(x)[0]
         x_rec = jax.vmap(marg.inverse_and_log_det)(y)[0]
