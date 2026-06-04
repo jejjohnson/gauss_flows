@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.7](https://github.com/jejjohnson/gauss_flows/compare/v0.1.6...v0.1.7) (2026-06-04)
+
+
+### Bug Fixes
+
+* make MixtureGaussianCDF tail inversion stable in float32 ([#109](https://github.com/jejjohnson/gauss_flows/issues/109)) ([d66b016](https://github.com/jejjohnson/gauss_flows/commit/d66b0167201eb54ee871af7d5ac6f158c81cc74d))
+
 ## [0.1.6](https://github.com/jejjohnson/gauss_flows/compare/v0.1.5...v0.1.6) (2026-06-01)
 
 

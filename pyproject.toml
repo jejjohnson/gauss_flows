@@ -1,6 +1,6 @@
 [project]
 name = "gauss_flows"
-version = "0.1.6"
+version = "0.1.7"
 description = "JAX/FlowJax-based RBIG — density estimation and IT measures with normalizing flows"
 authors = [
     { name = "Juan Emmanuel Johnson", email = "jemanjohnson34@gmail.com" },
