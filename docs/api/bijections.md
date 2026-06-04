@@ -95,6 +95,10 @@ training and the conditioning of downstream rotations.
 
 ::: gauss_flows.BatchNorm
 
+::: gauss_flows.GeneralizedDivisiveNormalization
+
+::: gauss_flows.GeneralizedDivisiveNormalization1D
+
 ## Periodic layers
 
 Periodic layers operate on angular (circular) coordinates living on $[-\pi, \pi)$, for flows
