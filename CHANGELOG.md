@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.8](https://github.com/jejjohnson/gauss_flows/compare/v0.1.7...v0.1.8) (2026-07-02)
+
+
+### Features
+
+* add GeneralizedDivisiveNormalization (GDN) bijector ([#117](https://github.com/jejjohnson/gauss_flows/issues/117)) ([7981815](https://github.com/jejjohnson/gauss_flows/commit/7981815b68d630482cc35142ec01ed832357c31c)), closes [#115](https://github.com/jejjohnson/gauss_flows/issues/115)
+
 ## [0.1.7](https://github.com/jejjohnson/gauss_flows/compare/v0.1.6...v0.1.7) (2026-06-04)
 
 
