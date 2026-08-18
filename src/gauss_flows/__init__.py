@@ -21,10 +21,13 @@ from gauss_flows._src.distributions import (
 )
 from gauss_flows._src.flows import (
     ClassCondFlow,
+    ConjugateTransformFilter,
     SurVAEFlow,
     coupling_gaussianization_flow,
     gaussianization_flow,
     iterative_rbig,
+    normalizing_kalman_filter,
+    rbig_conjugate_filter,
 )
 from gauss_flows._src.inference import FlowDist, FlowGuide, fit_gaussianization_flow
 from gauss_flows._src.info_theory import (
@@ -115,6 +118,7 @@ __all__ = [
     "ClassCondFlow",
     "ConditionalDiagGaussian",
     "Conditioner",
+    "ConjugateTransformFilter",
     "ContinuousAffineCoupling",
     "DeepSigmoidCoupling",
     "DiffeqConcat",
@@ -178,7 +182,9 @@ __all__ = [
     "logmap_sphere",
     "mutual_information",
     "negentropy",
+    "normalizing_kalman_filter",
     "pack_time_control",
+    "rbig_conjugate_filter",
     "tangent_basis",
     "time_control_cond_shape",
     "total_correlation",
