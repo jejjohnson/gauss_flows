@@ -13,10 +13,13 @@ from flowjax.bijections import (
     Affine as Affine_flowjax,
     Chain,
     Coupling,
+    Exp,
     Flip,
     Identity,
     Invert,
     RationalQuadraticSpline,
+    Sigmoid,
+    Stack,
     Vmap,
 )
 from flowjax.distributions import Normal, Transformed
@@ -871,16 +874,7 @@ def test_masking_preserves_a_bespoke_log_det_when_nothing_is_missing():
 
 
 def test_masking_still_drops_unobserved_channels_for_a_bespoke_log_det():
-    """Preserving the declared total must not stop the mask from masking.
-
-    Placeholder-independence is asserted for self-consistent warps in
-    `test_masked_log_prob_ignores_placeholder_values`. It cannot hold here: for
-    a bijection whose declared log-det is not its map's derivative, the two
-    properties — agreeing with the unmasked path, and ignoring unmeasured
-    values — are in direct conflict, and the residual either way is exactly
-    that bijection's own inconsistency. Agreement when nothing is missing wins,
-    because that case has an unambiguous right answer.
-    """
+    """Preserving the declared total must not stop the mask from masking."""
     pytest.importorskip("interpax")
     from gauss_flows import HistogramCDF
 
@@ -933,3 +927,144 @@ def test_self_consistent_warp_satisfies_both_masking_properties():
         )
         < 1e-4
     )
+
+
+# ---------------------------------------------------------------------------
+# Placeholders that would break a bounded warp
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("name", "build_warp", "to_data"),
+    [
+        ("Exp", lambda: Vmap(Exp(), in_axes=None, axis_size=N_CHANNELS), jnp.exp),
+        (
+            "Sigmoid",
+            lambda: Vmap(Sigmoid(), in_axes=None, axis_size=N_CHANNELS),
+            jax.nn.sigmoid,
+        ),
+    ],
+)
+@pytest.mark.parametrize("placeholder", [jnp.nan, -999.0, -1.0])
+def test_placeholders_outside_the_warp_support_do_not_contaminate(
+    name, build_warp, to_data, placeholder
+):
+    """A missing entry must not take the whole timestep down with it.
+
+    The bijection reduces its per-channel log-dets to a scalar before anything
+    can be masked, so one NaN or out-of-range sentinel makes the entire
+    timestep's log-determinant NaN — measured on both warps below, whose
+    inverses take a logarithm of the placeholder. NaN and -999 are the two
+    commonest ways to spell "missing", so this is the ordinary case, not a
+    corner one.
+    """
+    warp = build_warp()
+    nkf = normalizing_kalman_filter(_masking_base(), warp)
+    latent = 0.3 * jr.normal(jr.key(45), (N_STEPS, N_CHANNELS))
+    clean = to_data(latent)
+    mask = jr.bernoulli(jr.key(46), 0.6, (N_STEPS, N_CHANNELS))
+
+    reference = nkf.log_prob(clean, condition=mask)
+    assert jnp.isfinite(reference), name
+
+    contaminated = jnp.where(mask, clean, placeholder)
+    assert jnp.isfinite(nkf.log_prob(contaminated, condition=mask)), name
+    assert jnp.allclose(
+        nkf.log_prob(contaminated, condition=mask), reference, atol=1e-5
+    ), name
+
+
+def test_stack_of_scalar_marginals_is_admitted():
+    """`Stack` puts each scalar block on its own channel — strictly diagonal.
+
+    Heterogeneous marginals for mixed-support coordinates are a real pattern:
+    the conjugate-filter tests build exactly `Stack([Exp(), Sigmoid()])`.
+    """
+    warp = Stack([Exp(), Sigmoid(), Exp(), Sigmoid()][:N_CHANNELS])
+    assert warp.shape == (N_CHANNELS,)
+    assert not _mixes_channels(warp)
+
+    # Independently: the Jacobian really is diagonal.
+    point = 0.3 * jr.normal(jr.key(47), (N_CHANNELS,))
+    jacobian = jax.jacfwd(warp.transform)(point)
+    off_diagonal = jacobian - jnp.diag(jnp.diagonal(jacobian))
+    assert jnp.max(jnp.abs(off_diagonal)) == 0.0
+
+    assert normalizing_kalman_filter(_conditional_base(), warp).shape == (
+        N_STEPS,
+        N_CHANNELS,
+    )
+
+
+def test_container_subclasses_are_not_trusted_by_isinstance():
+    """A `Chain` subclass may override the map its children imply.
+
+    Inspecting only the stored children would let a dense override inherit the
+    elementwise verdict of its elementwise members.
+    """
+
+    class _DenseChain(Chain):
+        """Elementwise children, dense map."""
+
+        def transform(self, x, condition=None):
+            return jnp.roll(x, 1)
+
+        def transform_and_log_det(self, x, condition=None):
+            return jnp.roll(x, 1), jnp.zeros(())
+
+        def inverse_and_log_det(self, y, condition=None):
+            return jnp.roll(y, -1), jnp.zeros(())
+
+    impostor = _DenseChain([_elementwise_warp()])
+    assert all(
+        not _mixes_channels(member) for member in impostor.bijections
+    )  # children are fine
+    assert _mixes_channels(impostor)  # the subclass is not
+    with pytest.raises(ValueError, match="follows from its type"):
+        normalizing_kalman_filter(_conditional_base(), impostor)
+
+    # The real Chain of the same members is still admitted.
+    assert not _mixes_channels(Chain([_elementwise_warp()]))
+
+
+def test_histogram_cdf_needs_a_probit_step_to_be_a_valid_warp():
+    """`Invert(HistogramCDF(...))` alone is not a Gaussian-to-data warp.
+
+    `HistogramCDF` maps data to a *uniform* variable, so its inverse expects
+    ``[0, 1]``. A Gaussian base supplies all of ℝ, and outside ``[0, 1]`` the
+    map is clamped to the fitted bin edges: measured log-determinant of
+    ``-inf`` and a round-trip error of 2.5 — i.e. not a bijection there, so the
+    density is not normalised. Composing with `InverseGaussCDF` supplies the
+    probit step `MixtureGaussianCDF` already has built in.
+    """
+    pytest.importorskip("interpax")
+    from gauss_flows import HistogramCDF, InverseGaussCDF
+
+    data = jr.normal(jr.key(48), (2000, N_CHANNELS))
+    histogram = HistogramCDF(n_bins=32, shape=(N_CHANNELS,), method="linear").fit(data)
+    outside = jnp.array([-2.5, 0.4, 3.1, -1.7])[:N_CHANNELS]
+
+    # The premise: on [0, 1] the bare inverse is fine ...
+    bare = Invert(histogram)
+    inside = jnp.array([0.1, 0.2, 0.3, 0.4])[:N_CHANNELS]
+    _, inside_log_det = bare.transform_and_log_det(inside)
+    assert jnp.isfinite(inside_log_det)
+
+    # ... and off it, the map degenerates.
+    bare_y, bare_log_det = bare.transform_and_log_det(outside)
+    assert jnp.isneginf(bare_log_det)
+    assert jnp.max(jnp.abs(bare.inverse(bare_y) - outside)) > 1.0
+
+    # The recommended composition stays a bijection across the base's range.
+    warp = Invert(Chain([histogram, InverseGaussCDF(shape=(N_CHANNELS,))]))
+    assert not _mixes_channels(warp)
+    y, log_det = warp.transform_and_log_det(outside)
+    assert jnp.isfinite(log_det)
+    assert jnp.all(jnp.isfinite(y))
+    assert jnp.allclose(warp.inverse(y), outside, atol=1e-3)
+
+    nkf = normalizing_kalman_filter(_masking_base(), warp)
+    latent = 0.3 * jr.normal(jr.key(49), (N_STEPS, N_CHANNELS))
+    observations = jax.vmap(warp.transform)(latent)
+    mask = jr.bernoulli(jr.key(50), 0.6, (N_STEPS, N_CHANNELS))
+    assert jnp.isfinite(nkf.log_prob(observations, condition=mask))

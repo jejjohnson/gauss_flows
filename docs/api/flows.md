@@ -135,6 +135,12 @@ Two details that follow from this and are easy to get wrong:
   observations. `fit_rbig` already follows this convention, returning
   `Transformed(base, Invert(Chain(...)))`. `RQSplineMarginal` and a lifted
   `RationalQuadraticSpline` are direction-neutral.
+- **`HistogramCDF` needs a probit step.** It maps data to a *uniform* variable,
+  not a Gaussian one, so `Invert(HistogramCDF(...))` expects `[0, 1]` inputs
+  while the base supplies all of ℝ; values outside clamp to the fitted bin edges
+  and the density stops being normalised. Compose it with the step
+  `MixtureGaussianCDF` already includes:
+  `Invert(Chain([HistogramCDF(...), InverseGaussCDF(shape=(M,))]))`.
 
 ::: gauss_flows.normalizing_kalman_filter
 

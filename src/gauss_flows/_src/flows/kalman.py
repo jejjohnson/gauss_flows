@@ -70,13 +70,23 @@ differently:
    deliberate deviation from the source paper, which uses a coupling flow
    specifically to model cross-series dependence.
 
-   Mind the direction when reaching for the package's marginal bijections.
-   ``warp`` maps the Gaussian base to observations, whereas a Gaussianiser like
+   Mind the direction, and mind where each bijection lands. ``warp`` maps the
+   Gaussian base to observations, whereas a Gaussianiser like
    `gauss_flows.MixtureGaussianCDF` maps data to Gaussian — its *inverse* is
    the warp, so wrap it: ``Invert(MixtureGaussianCDF(...))``. Same for
-   `MixtureLogisticCDF`, `HistogramCDF` and `InverseGaussCDF`. This is the
-   convention `gauss_flows.fit_rbig` already follows when it returns
-   ``Transformed(base, Invert(Chain(...)))``. `RQSplineMarginal` and a lifted
+   `MixtureLogisticCDF`. This is the convention `gauss_flows.fit_rbig` already
+   follows when it returns ``Transformed(base, Invert(Chain(...)))``.
+
+   `HistogramCDF` needs one more link. It maps data to a **uniform** variable,
+   not to a Gaussian one, so ``Invert(HistogramCDF(...))`` expects inputs in
+   ``[0, 1]`` while the base hands it values across all of ℝ — everything
+   outside gets clamped to the fitted bin edges, giving boundary atoms and an
+   unnormalised density. Compose it with the probit step that
+   `MixtureGaussianCDF` already has built in::
+
+       Invert(Chain([HistogramCDF(...), InverseGaussCDF(shape=(M,))]))
+
+   `RQSplineMarginal` and a lifted
    `flowjax.bijections.RationalQuadraticSpline` carry no Gaussianising
    direction and can be used either way round. The change of variables is
    restricted to the observed channels automatically — see `_MaskedLogDet`,
@@ -123,6 +133,7 @@ from flowjax.bijections import (
     Scale,
     Sigmoid,
     SoftPlus,
+    Stack,
     Tanh,
     Vmap,
 )
@@ -185,16 +196,21 @@ def _structurally_diagonal(bijection: AbstractBijection) -> bool | None:
         ``True`` if provably diagonal, ``False`` if provably not, ``None`` if
         undecidable from structure alone.
     """
-    if isinstance(bijection, Chain):
+    # Exact type, not isinstance, for the containers too: a Chain subclass is
+    # free to override transform/inverse with a dense map, and inspecting only
+    # its stored children would then wave that override straight past the
+    # guard. Same reasoning as the leaf allowlist below.
+    kind = type(bijection)
+    if kind is Chain:
         members = [_structurally_diagonal(b) for b in bijection.bijections]
         if any(m is False for m in members):
             return False  # one mixing member is enough
         return None if any(m is None for m in members) else True
-    if isinstance(bijection, Invert):
+    if kind is Invert:
         # Inverting transposes the Jacobian's sparsity pattern; diagonal stays
         # diagonal, triangular stays triangular.
         return _structurally_diagonal(bijection.bijection)
-    if isinstance(bijection, Vmap):
+    if kind is Vmap:
         # Vmap gives a block-diagonal Jacobian whose blocks are the inner
         # bijection's — diagonal overall exactly when the block is. A scalar
         # inner makes those blocks 1x1, which is diagonal no matter what the
@@ -204,9 +220,20 @@ def _structurally_diagonal(bijection: AbstractBijection) -> bool | None:
         if bijection.bijection.shape == ():
             return True
         return _structurally_diagonal(bijection.bijection)
-    if type(bijection).__module__.startswith(_ELEMENTWISE_MODULE):
+    if kind is Stack:
+        # Stack puts each block on its own slice of the stacked axis. Scalar
+        # blocks therefore occupy one channel each and the Jacobian is
+        # strictly diagonal, whatever the blocks are — which is what makes
+        # heterogeneous marginals like Stack([Exp(), Sigmoid()]) safe over a
+        # masked base. Non-scalar blocks give a 2-D event, outside what this
+        # module's (M,) warps cover, so leave those undecided.
+        blocks = bijection.bijections
+        if all(b.shape == () for b in blocks):
+            return True
+        return None
+    if kind.__module__.startswith(_ELEMENTWISE_MODULE):
         return True
-    if type(bijection) in _ELEMENTWISE_TYPES:
+    if kind in _ELEMENTWISE_TYPES:
         return True
     return None
 
@@ -323,6 +350,27 @@ class _MaskedLogDet(AbstractBijection):
         self.shape = bijection.shape
         self.cond_shape = bijection.shape
 
+    def _safe(self, x, mask, reference):
+        """Replace unobserved entries with a value inside the warp's support.
+
+        Unobserved slots hold whatever the caller parked there, and the two
+        commonest choices — ``NaN`` and an out-of-range sentinel like ``-1`` or
+        ``-999`` — are exactly the ones that break a bounded warp. The
+        bijection reduces its per-channel log-dets to a scalar internally, so
+        one bad entry turns the whole timestep's log-determinant into ``NaN``:
+        measured on ``Vmap(Exp())`` and ``Vmap(Sigmoid())``, whose inverses
+        take a logarithm of the placeholder. No later masking recovers the
+        observed channels from that — the information is gone before the mask
+        is applied.
+
+        Substituting first is what makes the masked density well defined at
+        all. The reference is derived from the warp itself, so it is in-support
+        per channel by construction, and it depends on the mask rather than on
+        the discarded values, so the result stays independent of whatever the
+        placeholder happened to be.
+        """
+        return jnp.where(mask, x, reference)  # (M,)
+
     def _masked_log_det(self, fn, declared, x, mask):
         """Drop the unobserved channels from the wrapped log-determinant.
 
@@ -348,12 +396,23 @@ class _MaskedLogDet(AbstractBijection):
         return declared - jnp.sum(jnp.where(mask, 0.0, per_channel))
 
     def transform_and_log_det(self, x, condition=None):
-        y, declared = self.bijection.transform_and_log_det(x)  # (M,), ()
-        return y, self._masked_log_det(self.bijection.transform, declared, x, condition)
+        # Base space: the state-space base is Gaussian, so zero is in support.
+        safe = self._safe(x, condition, jnp.zeros(self.shape))  # (M,)
+        y, declared = self.bijection.transform_and_log_det(safe)  # (M,), ()
+        return y, self._masked_log_det(
+            self.bijection.transform, declared, safe, condition
+        )
 
     def inverse_and_log_det(self, y, condition=None):
-        x, declared = self.bijection.inverse_and_log_det(y)  # (M,), ()
-        return x, self._masked_log_det(self.bijection.inverse, declared, y, condition)
+        # Data space: the warp's image is exactly the support of the
+        # observations, so pushing a base-space zero forward lands inside it,
+        # per channel, whatever each channel's range happens to be.
+        reference = self.bijection.transform(jnp.zeros(self.shape))  # (M,)
+        safe = self._safe(y, condition, reference)  # (M,)
+        x, declared = self.bijection.inverse_and_log_det(safe)  # (M,), ()
+        return x, self._masked_log_det(
+            self.bijection.inverse, declared, safe, condition
+        )
 
 
 _MASKED_COUPLING_MESSAGE = """\
