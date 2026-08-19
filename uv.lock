@@ -496,7 +496,7 @@ wheels = [
 
 [[package]]
 name = "gauss-flows"
-version = "0.1.5"
+version = "0.1.8"
 source = { editable = "." }
 dependencies = [
     { name = "diffrax" },
@@ -555,7 +555,7 @@ requires-dist = [
     { name = "jax", specifier = ">=0.4.30" },
     { name = "jaxlib", specifier = ">=0.4.30" },
     { name = "jaxtyping" },
-    { name = "matfree", specifier = ">=0.5.5,<0.6" },
+    { name = "matfree", specifier = ">=0.5.5,<0.7" },
     { name = "numpyro", specifier = ">=0.13" },
     { name = "optimistix", specifier = ">=0.0.9" },
     { name = "paramax" },
