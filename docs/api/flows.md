@@ -97,6 +97,24 @@ exactly. A mask-conditioned warp is permitted; an unconditional channel-mixing w
 over a masked base is refused at construction. An unmasked base places no
 restriction on the warp.
 
+Two details that follow from this and are easy to get wrong:
+
+- **The log-det is restricted to the observed channels.** Change of variables
+  applies to the coordinates being modelled, so with a masked base the Jacobian
+  term is summed under the mask. A plain `Transformed` sums it over all `T × M`
+  entries, adding terms for values that were never measured — the density then
+  stops being a marginal likelihood, off by a data-dependent offset. The
+  constructor wraps elementwise warps to handle this automatically. In the
+  mask-conditioned case (2) it cannot: a channel-mixing Jacobian does not
+  decompose per channel, so there `log_prob` is a training objective, not a
+  marginal likelihood.
+- **A warp is classified by what it can represent, not by its Jacobian at
+  initialisation.** `OrthogonalRotation` starts with zero Cayley parameters, so it
+  *is* the identity when you build it and would pass any one-time numerical
+  probe — then becomes a dense rotation the moment an optimiser touches it.
+  Unrecognised bijections carrying trainable parameters are refused over a masked
+  base for the same reason.
+
 ::: gauss_flows.normalizing_kalman_filter
 
 ### Ensemble Conjugate Transform Filter
@@ -107,8 +125,19 @@ worth keeping is that **the EnKF's Gaussian assumption is a statement about
 coordinates, not about the algorithm**. Applied to a non-Gaussian prior the
 physical-space update is biased, and the bias does not shrink with ensemble size —
 no number of extra members will fix it. Conjugating the update with a bijection
-removes it, exactly when the likelihood is Gaussian in the same latent coordinates
-that Gaussianise the prior.
+removes it.
+
+Worth stating the exactness conditions precisely, because they are easy to
+over-claim. The conjugated update is exact Bayes only **in the population limit**,
+and only when the observation model is **affine with additive Gaussian noise** in
+the same latent coordinates that Gaussianise the prior. A merely "Gaussian
+likelihood" is not enough — `y = ζ² + ε` has Gaussian noise and a non-Gaussian
+posterior no Kalman update reproduces. With a finite ensemble the gain is empirical
+and the perturbations are Monte Carlo, so the result is an estimate regardless.
+Outside those conditions there is **no guaranteed ordering** against the
+physical-space update: it usually helps, and helps a lot when the prior really is a
+warped Gaussian, but a badly matched warp can make the latent joint less Gaussian
+and do worse. gauss_flows cannot check the condition for you.
 
 On the reference paper's lognormal / logit-normal problem, whose exact posterior
 mean is `[0.548062, 0.353937]` (error in the posterior mean, averaged over 4 draws):

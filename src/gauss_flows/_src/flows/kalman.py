@@ -68,11 +68,17 @@ differently:
    structure lives in the state-space model's ``H`` and ``R``, where the Kalman
    recursion handles it exactly. **This is the recommendation**, and it is a
    deliberate deviation from the source paper, which uses a coupling flow
-   specifically to model cross-series dependence.
+   specifically to model cross-series dependence. The change of variables is
+   restricted to the observed channels automatically — see `_MaskedLogDet`,
+   without which the log-det would pick up terms for entries the base
+   marginalised away and the density would stop being a marginal likelihood.
 2. **Mask-conditioned warp + masked base** — permitted. The transform sees the
    mask through ``condition``, so it is at least a well-defined function of what
    was observed. No exactness guarantee, and the warp must learn up to ``2^M``
-   masking patterns.
+   masking patterns. The log-det is **not** restricted to the observed channels
+   here: a channel-mixing Jacobian does not decompose per channel, so there is
+   no exact marginal to compute. ``log_prob`` is a training objective in this
+   case, not a marginal likelihood.
 3. **Unconditional channel-mixing warp + masked base** — **rejected at
    construction.** This is the case measured above. The failure is silent,
    data-dependent, and looks like underfitting rather than a bug.
@@ -90,6 +96,7 @@ References:
 
 from __future__ import annotations
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
@@ -97,9 +104,10 @@ from flowjax.bijections import AbstractBijection, Chain, Invert, Vmap
 from flowjax.distributions import AbstractDistribution, Transformed
 
 
-# Bijections whose Jacobian is diagonal in the event axis by construction.
-# Anything absent from this list is decided by the numerical probe rather than
-# assumed safe, so a new or third-party bijection is measured, not trusted.
+# Bijections whose Jacobian is diagonal in the event axis by construction, for
+# EVERY parameter value — not merely at initialisation. That distinction is the
+# point: a numerical probe describes one point in parameter space, and a warp
+# that trains can leave it (see `_mixes_channels`).
 _ELEMENTWISE_NAMES = frozenset(
     {
         "Affine",
@@ -185,19 +193,98 @@ def _probe_mixes_channels(bijection: AbstractBijection) -> bool:
     return False
 
 
+def _is_parameterised(bijection: AbstractBijection) -> bool:
+    """Whether the bijection carries trainable (inexact array) leaves."""
+    return any(eqx.is_inexact_array(leaf) for leaf in jax.tree.leaves(bijection))
+
+
 def _mixes_channels(bijection: AbstractBijection) -> bool:
     """Whether the bijection's Jacobian is not diagonal in the event axis.
+
+    Classification is by what the bijection *can represent*, not by its
+    Jacobian at its current parameter values. A one-time numerical probe would
+    admit a warp that is diagonal only at initialisation and becomes
+    channel-mixing as soon as training moves it —
+    `gauss_flows.OrthogonalRotation` is exactly that: its Cayley parameters
+    start at zero, so it probes as the identity, and any nonzero learned value
+    makes it a dense rotation. So the probe is used only for bijections with no
+    trainable leaves, where the current Jacobian is the only Jacobian.
 
     Args:
         bijection: An unconditional bijection with event shape ``(M,)``.
 
     Returns:
-        ``True`` if the bijection mixes channels.
+        ``True`` if the bijection mixes channels, or if that cannot be ruled
+        out for every parameter value it could take.
     """
     structural = _structurally_diagonal(bijection)
     if structural is not None:
         return not structural
+    if _is_parameterised(bijection):
+        # Unknown type with trainable leaves: unverifiable, so refused.
+        return True
     return _probe_mixes_channels(bijection)
+
+
+class _MaskedLogDet(AbstractBijection):
+    r"""Wrap an elementwise warp so its log-det only counts observed channels.
+
+    Change of variables applies to the coordinates actually being modelled. A
+    masked base marginalises the unobserved channels, so the density of the
+    observed ones is
+
+    $$
+    \log p(y_{\mathrm{obs}}) = \log p_{\mathrm{base}}(z_{\mathrm{obs}})
+      + \sum_{i \in \mathrm{obs}} \log\left|\frac{\partial z_i}{\partial y_i}\right| ,
+    $$
+
+    with the sum over the **observed** channels only. A plain
+    `flowjax.distributions.Transformed` sums it over all ``M`` of them, adding
+    Jacobian terms for entries that were never measured — and evaluating them
+    at whatever placeholder the caller left in those slots. The result is not a
+    marginal likelihood, and the error is a data-dependent offset that no test
+    of the unmasked path can catch.
+
+    This wrapper is applied automatically by `normalizing_kalman_filter` when
+    the base consumes a mask and the warp is elementwise. It relies on that
+    elementwise property: for a diagonal Jacobian $J$, a single
+    forward-mode pass gives $J \mathbf{1} = \mathrm{diag}(J)$, so the
+    per-channel log-dets come out in one JVP rather than ``M`` of them.
+
+    Attributes:
+        bijection: The elementwise warp, event shape ``(M,)``.
+        shape: ``(M,)``, taken from ``bijection``.
+        cond_shape: ``(M,)`` — the per-timestep observation mask.
+    """
+
+    bijection: AbstractBijection
+    shape: tuple[int, ...]
+    cond_shape: tuple[int, ...]
+
+    def __init__(self, bijection: AbstractBijection):
+        if bijection.cond_shape is not None:
+            raise ValueError(
+                "_MaskedLogDet wraps an unconditional elementwise warp; got "
+                f"cond_shape={bijection.cond_shape}."
+            )
+        self.bijection = bijection
+        self.shape = bijection.shape
+        self.cond_shape = bijection.shape
+
+    def _masked_log_det(self, fn, x, mask):
+        """Sum log|diag(J)| over observed channels, via one JVP."""
+        # J is diagonal, so J @ 1 == diag(J): one forward-mode pass, not M.
+        _, diagonal = jax.jvp(fn, (x,), (jnp.ones_like(x),))  # (M,)
+        per_channel = jnp.log(jnp.abs(diagonal))  # (M,)
+        return jnp.sum(jnp.where(mask, per_channel, 0.0))
+
+    def transform_and_log_det(self, x, condition=None):
+        y = self.bijection.transform(x)  # (M,)
+        return y, self._masked_log_det(self.bijection.transform, x, condition)
+
+    def inverse_and_log_det(self, y, condition=None):
+        x = self.bijection.inverse(y)  # (M,)
+        return x, self._masked_log_det(self.bijection.inverse, y, condition)
 
 
 _MASKED_COUPLING_MESSAGE = """\
@@ -207,6 +294,14 @@ silently corrupted by entries that were never measured (measured median error \
 0.49 against a signal scale of 0.43, on a 2-layer coupling flow with ~40% \
 missing). The failure looks like underfitting, not like a bug, which is why it \
 is refused here.
+
+A warp is treated as channel-mixing unless it is elementwise for EVERY
+parameter value, not merely at initialisation. An unrecognised bijection that
+carries trainable parameters is therefore refused too: a numerical probe
+describes one point in parameter space, and training moves it. gauss_flows'
+own OrthogonalRotation is the cautionary case — its Cayley parameters start at
+zero, so it probes as the identity, and any nonzero learned value makes it a
+dense rotation.
 
 Three combinations are coherent — pick one:
 
@@ -311,18 +406,16 @@ def normalizing_kalman_filter(
 
     # Case 3: a masked base with an unconditional channel-mixing warp. The warp
     # is unconditional exactly when cond_shape is None; a conditioned warp is
-    # case 2 and permitted, so it is never probed.
-    if (
-        base.cond_shape is not None
-        and warp.cond_shape is None
-        and _mixes_channels(warp)
-    ):
+    # case 2 and permitted, so it is never classified.
+    masked = base.cond_shape is not None
+    elementwise = warp.cond_shape is None and not _mixes_channels(warp)
+    if masked and warp.cond_shape is None and not elementwise:
         raise ValueError(_MASKED_COUPLING_MESSAGE)
 
     if warp.cond_shape is not None:
-        # The warp's condition is one timestep's worth; the base's is the whole
-        # series. Check that here, where the time axis can be named, rather
-        # than letting flowjax report a bare cond_shape mismatch.
+        # Case 2 only. The warp's condition is one timestep's worth; the base's
+        # is the whole series. Check that here, where the time axis can be
+        # named, rather than letting flowjax report a bare cond_shape mismatch.
         if base.cond_shape is None:
             raise ValueError(
                 f"warp consumes a condition of shape {warp.cond_shape} but base "
@@ -337,16 +430,22 @@ def normalizing_kalman_filter(
                 f"axis, which would be {(n_base_steps, *warp.cond_shape)}."
             )
 
+    # Case 1 with a masked base: the change of variables must count only the
+    # observed channels, or `Transformed` adds Jacobian terms for entries the
+    # base marginalised away and the result stops being a marginal likelihood.
+    # The wrapper consumes the same per-timestep mask the base does.
+    per_step = _MaskedLogDet(warp) if masked and elementwise else warp
+
     # Time axis: apply the same (M,)-shaped warp at each of the T steps. A
-    # conditional warp (case 2) additionally needs its condition mapped over
-    # that axis, so the lifted warp's cond_shape becomes (T, M) and matches the
+    # conditional warp additionally needs its condition mapped over that axis,
+    # so the lifted warp's cond_shape becomes (T, M) and matches the
     # per-timestep mask the base consumes. Without in_axes_condition the lifted
     # warp keeps cond_shape (M,) and `Transformed` rejects the pair.
     lifted = Vmap(
-        warp,
+        per_step,
         in_axes=None,
         axis_size=n_steps or n_base_steps,
-        in_axes_condition=None if warp.cond_shape is None else 0,
+        in_axes_condition=None if per_step.cond_shape is None else 0,
     )
     return Transformed(base, lifted)
 

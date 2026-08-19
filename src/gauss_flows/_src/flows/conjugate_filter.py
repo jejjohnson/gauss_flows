@@ -3,9 +3,10 @@ r"""Ensemble Kalman analysis performed in a Gaussianised latent space.
 The Ensemble Conjugate Transform Filter of Chipilski (2025). The ensemble
 Kalman filter's Gaussian update is not wrong in itself — it is applied in the
 wrong **coordinates**. If the prior is the pushforward of a Gaussian under a
-bijection $\Gamma$ and the likelihood is Gaussian in the latent space, then the
-Kalman update performed in latent space and mapped back is *exactly Bayes*, not
-an approximation:
+bijection $\Gamma$, and the observation model is affine with additive Gaussian
+noise in that same latent space, then the Kalman update performed in latent
+space and mapped back is *exactly Bayes* in the population limit, not an
+approximation:
 
 $$
 X^a = \Gamma\!\left(\mathrm{EnKF}\!\left(\Gamma^{-1}(X^f),\;
@@ -52,7 +53,13 @@ def _require_gaussx():
         # gaussx is deliberately not a declared dependency (see the ImportError
         # below), so it is absent from the typecheck environment.
         from gaussx import enkf_analysis  # ty: ignore[unresolved-import]
-    except ImportError as exc:  # pragma: no cover - exercised by hand
+    # Catching Exception, not ImportError: in the dependency set users are most
+    # likely to hit, gaussx is *present* but raises AttributeError partway
+    # through its own import (it reaches for matfree's post-0.6 `sampler_signs`
+    # while gauss_flows pins the pre-0.6 `sampler_rademacher`). Narrowing to
+    # ImportError would let that surface as an opaque traceback from a package
+    # the caller never imported, which is what this helper exists to prevent.
+    except Exception as exc:  # pragma: no cover - exercised by hand
         raise ImportError(
             "ConjugateTransformFilter needs the 'gaussx' package for its "
             "ensemble Kalman analysis step. gaussx is NOT a declared "
@@ -62,7 +69,8 @@ def _require_gaussx():
             "gauss_flows._src._divergence still uses the pre-0.6 "
             "`sampler_rademacher`). Install it deliberately into an "
             "environment where those are resolved: "
-            "`pip install git+https://github.com/jejjohnson/gaussx.git`."
+            "`pip install git+https://github.com/jejjohnson/gaussx.git`. "
+            f"The underlying failure was {type(exc).__name__}: {exc}"
         ) from exc
     return enkf_analysis
 
@@ -76,13 +84,25 @@ class ConjugateTransformFilter(eqx.Module):
     coordinates, applies `gaussx.enkf_analysis` there, and warps the result
     back. See the module docstring for the accuracy argument.
 
-    **Exactness caveat.** The update is exact Bayes only when the likelihood is
-    Gaussian in the *same* latent coordinates that Gaussianise the prior. When
-    it is not, this remains a strictly better approximation than the
-    physical-space update, but it is an approximation. gauss_flows cannot check
-    that condition for you — nothing in the ensemble reveals it — so treat the
-    exactness claim as conditional on a modelling assumption you have made,
-    not as a guarantee the library enforces.
+    **Exactness caveat.** The update is exact Bayes only in the population
+    limit, and only when the prior really is the pushforward of a Gaussian under
+    ``warp`` *and* the observation model is affine with additive Gaussian noise
+    in those same latent coordinates. With a finite ensemble the gain is
+    empirical and the perturbations are Monte Carlo, so even then the result is
+    an estimate. "Gaussian likelihood" is not sufficient on its own: a model
+    like $y = \zeta^2 + \varepsilon$ has Gaussian noise but a non-Gaussian
+    posterior this update does not reproduce.
+
+    When the assumption does not hold, this is an approximation with **no
+    guaranteed ordering** against the physical-space update. A poorly matched
+    warp can make the latent joint *less* Gaussian and give a worse answer than
+    doing nothing — "Gaussianise first" is not monotone. It typically helps, and
+    helps a great deal when the prior is genuinely a warped Gaussian (see the
+    module docstring), but a degraded result is an expected possibility rather
+    than a sign of a bug in the implementation or of too few members.
+    gauss_flows cannot check the condition for you — nothing in the ensemble
+    reveals it — so treat exactness as conditional on a modelling assumption you
+    have made, not as a guarantee the library enforces.
 
     A practical note on ``warp``: `analysis` calls ``warp.inverse`` under
     `jax.vmap` once per ensemble member, so a warp whose inverse is itself

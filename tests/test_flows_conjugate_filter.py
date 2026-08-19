@@ -388,3 +388,27 @@ def test_rejects_an_obs_warp_that_does_not_match_the_observation_space():
         mismatched.analysis(
             physical, physical[:, :1], observation, _noise_op(), key=jr.key(20)
         )
+
+
+def test_import_failure_is_reported_as_an_actionable_dependency_error(monkeypatch):
+    """Non-ImportError failures must not leak out of `_require_gaussx`.
+
+    In the dependency set users are most likely to hit, gaussx is installed but
+    raises AttributeError partway through its own import. Catching only
+    ImportError would surface that as an opaque traceback from a package the
+    caller never imported.
+    """
+    import builtins
+
+    from gauss_flows._src.flows import conjugate_filter as module
+
+    real_import = builtins.__import__
+
+    def _boom(name, *args, **kwargs):
+        if name == "gaussx":
+            raise AttributeError("module 'matfree.stochtrace' has no attribute ...")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", _boom)
+    with pytest.raises(ImportError, match="AttributeError"):
+        module._require_gaussx()

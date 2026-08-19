@@ -22,6 +22,10 @@ from flowjax.distributions import Normal, Transformed
 
 from gauss_flows import NumpyroBase, normalizing_kalman_filter
 from gauss_flows._src.flows.kalman import _mixes_channels
+from gauss_flows._src.transforms.bijections.linear.rotation import (
+    HouseholderRotation,
+    OrthogonalRotation,
+)
 
 
 N_STEPS, N_CHANNELS = 8, 4
@@ -387,3 +391,177 @@ def test_with_a_gaussx_lgssm_base():
     z, log_det = jax.vmap(warp.inverse_and_log_det)(y)
     expected = base.log_prob(z) + log_det.sum()
     assert jnp.abs(nkf.log_prob(y) - expected) < 1e-13
+
+
+# ---------------------------------------------------------------------------
+# Masked change of variables: the log-det counts observed channels only
+# ---------------------------------------------------------------------------
+
+
+def _masking_base(n_steps=N_STEPS, n_channels=N_CHANNELS):
+    """A base that genuinely marginalises the unobserved entries."""
+    return NumpyroBase(
+        dist_factory=lambda mask: (
+            ndist.Normal(0.0, 1.0).expand((n_steps, n_channels)).mask(mask).to_event(2)
+        ),
+        event_shape=(n_steps, n_channels),
+        cond_shape=(n_steps, n_channels),
+    )
+
+
+def _reference_masked_log_prob(warp, y, mask):
+    """The marginal likelihood, written out directly.
+
+    Change of variables applies to the observed coordinates only, so the
+    per-channel log-dets are summed under the mask.
+    """
+    z = jax.vmap(warp.inverse)(y)  # (T, M)
+    per_entry = jax.vmap(
+        lambda v: jnp.log(jnp.abs(jnp.diag(jax.jacfwd(warp.inverse)(v))))
+    )(y)  # (T, M)
+    logp = jax.scipy.stats.norm.logpdf(z)  # (T, M)
+    return jnp.sum(jnp.where(mask, logp + per_entry, 0.0))
+
+
+def test_masked_log_prob_is_the_marginal_likelihood():
+    """The recommended configuration must return a marginal likelihood.
+
+    A plain `Transformed` sums the log-det over all (T, M) entries, including
+    the ones the base marginalised away. That is a data-dependent offset — it
+    passed every unmasked test in this file, and was wrong by 1.62 nats on the
+    first masked example tried.
+    """
+    # A non-volume-preserving warp, or the bug is invisible.
+    warp = Chain(
+        [
+            Vmap(
+                RationalQuadraticSpline(knots=6, interval=4),
+                in_axes=None,
+                axis_size=N_CHANNELS,
+            ),
+            Affine(loc=jnp.zeros(N_CHANNELS), scale=1.5 * jnp.ones(N_CHANNELS)),
+        ]
+    )
+    nkf = normalizing_kalman_filter(_masking_base(), warp)
+
+    y = 0.4 * jr.normal(jr.key(20), (N_STEPS, N_CHANNELS))
+    mask = jr.bernoulli(jr.key(21), 0.6, (N_STEPS, N_CHANNELS))
+
+    got = nkf.log_prob(y, condition=mask)
+    assert jnp.abs(got - _reference_masked_log_prob(warp, y, mask)) < 1e-5
+
+
+def test_masked_log_prob_ignores_placeholder_values():
+    """Unobserved slots must not move the density, whatever is parked there."""
+    warp = Vmap(
+        RationalQuadraticSpline(knots=6, interval=4),
+        in_axes=None,
+        axis_size=N_CHANNELS,
+    )
+    nkf = normalizing_kalman_filter(_masking_base(), warp)
+
+    y = 0.4 * jr.normal(jr.key(22), (N_STEPS, N_CHANNELS))
+    mask = jr.bernoulli(jr.key(23), 0.6, (N_STEPS, N_CHANNELS))
+    # Values well inside the spline interval, where its log-det is not constant.
+    other = jnp.where(mask, y, 2.5)
+
+    assert jnp.allclose(
+        nkf.log_prob(y, condition=mask),
+        nkf.log_prob(other, condition=mask),
+        atol=1e-6,
+    )
+
+
+def test_all_observed_mask_matches_the_unmasked_log_det():
+    """With nothing missing, the masked path must agree with the plain one."""
+    warp = _elementwise_warp()
+    y = 0.4 * jr.normal(jr.key(24), (N_STEPS, N_CHANNELS))
+    full = jnp.ones((N_STEPS, N_CHANNELS), dtype=bool)
+
+    masked = normalizing_kalman_filter(_masking_base(), warp)
+    _, log_det = jax.vmap(warp.inverse_and_log_det)(y)
+    z = jax.vmap(warp.inverse)(y)
+    expected = jnp.sum(jax.scipy.stats.norm.logpdf(z)) + log_det.sum()
+    assert jnp.abs(masked.log_prob(y, condition=full) - expected) < 1e-5
+
+
+def test_unmasked_base_keeps_the_plain_transformed_log_det():
+    """The wrapper must not alter the unconditional path."""
+    warp = _elementwise_warp()
+    nkf = normalizing_kalman_filter(_unconditional_base(), warp)
+    y = 0.4 * jr.normal(jr.key(25), (N_STEPS, N_CHANNELS))
+    z, log_det = jax.vmap(warp.inverse_and_log_det)(y)
+    expected = _unconditional_base().log_prob(z) + log_det.sum()
+    assert jnp.abs(nkf.log_prob(y) - expected) < 1e-13
+
+
+def test_masked_log_prob_is_differentiable_and_jittable():
+    warp = _elementwise_warp()
+    nkf = normalizing_kalman_filter(_masking_base(), warp)
+    y = 0.3 * jr.normal(jr.key(26), (N_STEPS, N_CHANNELS))
+    mask = jr.bernoulli(jr.key(27), 0.6, (N_STEPS, N_CHANNELS))
+
+    out = eqx.filter_jit(lambda m, obs, c: m.log_prob(obs, condition=c))(nkf, y, mask)
+    assert jnp.isfinite(out)
+
+    grads = eqx.filter_grad(lambda m, obs, c: -m.log_prob(obs, condition=c))(
+        nkf, y, mask
+    )
+    leaves = [g for g in jax.tree.leaves(grads.bijection) if eqx.is_inexact_array(g)]
+    assert leaves and sum(jnp.sum(g**2) for g in leaves) > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Classification is by what a warp can represent, not by its initial Jacobian
+# ---------------------------------------------------------------------------
+
+
+def test_warp_that_is_diagonal_only_at_initialisation_is_rejected():
+    """OrthogonalRotation probes as the identity, then trains into a rotation.
+
+    Its Cayley parameters start at zero, so a one-time numerical probe sees the
+    identity — diagonal — and would admit a warp that violates the masking
+    invariant as soon as an optimiser touches it.
+    """
+    rotation = OrthogonalRotation(shape=(N_CHANNELS,))
+    # Diagonal right now ...
+    jacobian = jax.jacfwd(rotation.transform)(jnp.zeros(N_CHANNELS))
+    off_diagonal = jacobian - jnp.diag(jnp.diagonal(jacobian))
+    assert jnp.max(jnp.abs(off_diagonal)) == 0.0
+    # ... and refused anyway.
+    assert _mixes_channels(rotation)
+    with pytest.raises(ValueError, match="not merely at initialisation"):
+        normalizing_kalman_filter(_conditional_base(), rotation)
+
+
+def test_mixing_capable_warps_are_still_fine_over_an_unmasked_base():
+    """The restriction is a property of masking, not of the warp alone."""
+    for warp in (
+        OrthogonalRotation(shape=(N_CHANNELS,)),
+        HouseholderRotation(shape=(N_CHANNELS,), n_reflections=2),
+    ):
+        assert normalizing_kalman_filter(_unconditional_base(), warp).shape == (
+            N_STEPS,
+            N_CHANNELS,
+        )
+
+
+def test_unparameterised_unknown_bijection_is_still_probed():
+    """A fixed bijection has one Jacobian, so measuring it is sound."""
+
+    class _ScaleByTwo(eqx.Module):
+        """Elementwise, no trainable leaves."""
+
+        shape: tuple[int, ...] = (N_CHANNELS,)
+        cond_shape: tuple[int, ...] | None = None
+
+        def transform(self, x, condition=None):
+            return 2.0 * x
+
+        def transform_and_log_det(self, x, condition=None):
+            return 2.0 * x, jnp.log(2.0) * N_CHANNELS
+
+        def inverse_and_log_det(self, y, condition=None):
+            return y / 2.0, -jnp.log(2.0) * N_CHANNELS
+
+    assert not _mixes_channels(_ScaleByTwo())
