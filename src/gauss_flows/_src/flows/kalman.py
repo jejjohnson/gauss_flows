@@ -109,7 +109,23 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 import jax.random as jr
-from flowjax.bijections import AbstractBijection, Chain, Invert, Vmap
+from flowjax.bijections import (
+    AbstractBijection,
+    Affine,
+    Chain,
+    Exp,
+    Identity,
+    Invert,
+    LeakyTanh,
+    Loc,
+    Power,
+    RationalQuadraticSpline,
+    Scale,
+    Sigmoid,
+    SoftPlus,
+    Tanh,
+    Vmap,
+)
 from flowjax.distributions import AbstractDistribution, Transformed
 
 
@@ -117,19 +133,25 @@ from flowjax.distributions import AbstractDistribution, Transformed
 # EVERY parameter value — not merely at initialisation. That distinction is the
 # point: a numerical probe describes one point in parameter space, and a warp
 # that trains can leave it (see `_mixes_channels`).
-_ELEMENTWISE_NAMES = frozenset(
+# Matched by class identity, never by ``__name__``: a third-party bijection
+# called "Affine" that implements a dense map would otherwise be waved through
+# the mixing guard and into `_MaskedLogDet`, whose ``J @ 1 == diag(J)`` identity
+# holds only for a genuinely diagonal Jacobian. Exact identity rather than
+# ``isinstance`` for the same reason — a subclass is free to override
+# ``transform`` into something dense.
+_ELEMENTWISE_TYPES = frozenset(
     {
-        "Affine",
-        "Exp",
-        "Identity",
-        "LeakyTanh",
-        "Loc",
-        "Power",
-        "RationalQuadraticSpline",
-        "Scale",
-        "Sigmoid",
-        "SoftPlus",
-        "Tanh",
+        Affine,
+        Exp,
+        Identity,
+        LeakyTanh,
+        Loc,
+        Power,
+        RationalQuadraticSpline,
+        Scale,
+        Sigmoid,
+        SoftPlus,
+        Tanh,
     }
 )
 
@@ -184,7 +206,7 @@ def _structurally_diagonal(bijection: AbstractBijection) -> bool | None:
         return _structurally_diagonal(bijection.bijection)
     if type(bijection).__module__.startswith(_ELEMENTWISE_MODULE):
         return True
-    if type(bijection).__name__ in _ELEMENTWISE_NAMES:
+    if type(bijection) in _ELEMENTWISE_TYPES:
         return True
     return None
 
@@ -274,6 +296,13 @@ class _MaskedLogDet(AbstractBijection):
     forward-mode pass gives $J \mathbf{1} = \mathrm{diag}(J)$, so the
     per-channel log-dets come out in one JVP rather than ``M`` of them.
 
+    The wrapped bijection's own log-determinant is preserved — only the
+    unobserved channels' contributions are subtracted from it — so a warp that
+    reports a log-det differing from the autodiff derivative of its map keeps
+    its declared value, and an all-observed mask reproduces the ordinary
+    `flowjax.distributions.Transformed` density exactly. See
+    `_masked_log_det`.
+
     Attributes:
         bijection: The elementwise warp, event shape ``(M,)``.
         shape: ``(M,)``, taken from ``bijection``.
@@ -294,20 +323,37 @@ class _MaskedLogDet(AbstractBijection):
         self.shape = bijection.shape
         self.cond_shape = bijection.shape
 
-    def _masked_log_det(self, fn, x, mask):
-        """Sum log|diag(J)| over observed channels, via one JVP."""
+    def _masked_log_det(self, fn, declared, x, mask):
+        """Drop the unobserved channels from the wrapped log-determinant.
+
+        Subtracts the missing channels' contributions from ``declared`` rather
+        than rebuilding the total from the per-channel derivatives. The two
+        differ whenever a bijection reports a log-det that is not exactly the
+        autodiff derivative of the map it applies — `HistogramCDF` with
+        ``method="monotonic"`` does this deliberately, its inverse reporting
+        ``-log(fwd'(x_rec))`` while differentiating ``inverse`` goes through a
+        separately fitted interpolator. Rebuilding would then silently change
+        the model even with nothing missing, and the discrepancy (~4e-3 per
+        step, measured) would accumulate over the time axis.
+
+        Starting from ``declared`` makes the all-observed case exact by
+        construction, and leaves the ordinary case — where the declared total
+        already equals the sum of per-channel derivatives — untouched. Only the
+        *dropped* terms come from the JVP, so a bijection with a bespoke
+        log-det keeps its own convention for everything it still counts.
+        """
         # J is diagonal, so J @ 1 == diag(J): one forward-mode pass, not M.
         _, diagonal = jax.jvp(fn, (x,), (jnp.ones_like(x),))  # (M,)
         per_channel = jnp.log(jnp.abs(diagonal))  # (M,)
-        return jnp.sum(jnp.where(mask, per_channel, 0.0))
+        return declared - jnp.sum(jnp.where(mask, 0.0, per_channel))
 
     def transform_and_log_det(self, x, condition=None):
-        y = self.bijection.transform(x)  # (M,)
-        return y, self._masked_log_det(self.bijection.transform, x, condition)
+        y, declared = self.bijection.transform_and_log_det(x)  # (M,), ()
+        return y, self._masked_log_det(self.bijection.transform, declared, x, condition)
 
     def inverse_and_log_det(self, y, condition=None):
-        x = self.bijection.inverse(y)  # (M,)
-        return x, self._masked_log_det(self.bijection.inverse, y, condition)
+        x, declared = self.bijection.inverse_and_log_det(y)  # (M,), ()
+        return x, self._masked_log_det(self.bijection.inverse, declared, y, condition)
 
 
 _MASKED_COUPLING_MESSAGE = """\

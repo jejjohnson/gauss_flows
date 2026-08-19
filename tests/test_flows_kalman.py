@@ -10,6 +10,7 @@ import numpyro.distributions as ndist
 import pytest
 from flowjax.bijections import (
     Affine,
+    Affine as Affine_flowjax,
     Chain,
     Coupling,
     Flip,
@@ -801,3 +802,134 @@ def test_inverted_gaussianiser_is_the_warp_that_maps_base_to_data():
     # The direction claim itself: warp.transform is the Gaussianiser's inverse.
     z = 0.3 * jr.normal(jr.key(36), (N_CHANNELS,))
     assert jnp.allclose(warp.transform(z), gaussianiser.inverse(z), atol=1e-5)
+
+
+def test_allowlist_matches_class_identity_not_class_name():
+    """A look-alike named `Affine` must not inherit flowjax's guarantee.
+
+    Admitting on `type(x).__name__` would route a dense map through
+    `_MaskedLogDet`, whose `J @ 1 == diag(J)` identity holds only for a
+    genuinely diagonal Jacobian — so the marginal likelihood would be wrong
+    with no error anywhere.
+    """
+
+    class Affine(eqx.Module):
+        """Dense, despite the name."""
+
+        matrix: jnp.ndarray
+        shape: tuple[int, ...] = (N_CHANNELS,)
+        cond_shape: tuple[int, ...] | None = None
+
+        def transform(self, x, condition=None):
+            return self.matrix @ x
+
+        def transform_and_log_det(self, x, condition=None):
+            return self.matrix @ x, jnp.linalg.slogdet(self.matrix)[1]
+
+        def inverse_and_log_det(self, y, condition=None):
+            return jnp.linalg.solve(self.matrix, y), -jnp.linalg.slogdet(self.matrix)[1]
+
+    impostor = Affine(matrix=jnp.eye(N_CHANNELS) + 0.3)
+    assert type(impostor).__name__ == "Affine"
+    assert _mixes_channels(impostor)
+    with pytest.raises(ValueError, match="follows from its type"):
+        normalizing_kalman_filter(_conditional_base(), impostor)
+
+    # The real flowjax Affine is still admitted.
+    assert not _mixes_channels(
+        Affine_flowjax(loc=jnp.zeros(N_CHANNELS), scale=jnp.ones(N_CHANNELS))
+    )
+
+
+def test_masking_preserves_a_bespoke_log_det_when_nothing_is_missing():
+    """An all-observed mask must reproduce the ordinary density exactly.
+
+    `HistogramCDF(method="monotonic")` reports an inverse log-det of
+    `-log(fwd'(x_rec))` while differentiating `inverse` goes through a
+    separately fitted interpolator — measured ~4e-3 apart per timestep. Rebuilding
+    the total from per-channel derivatives would quietly change the model and
+    accumulate that gap over the time axis.
+    """
+    pytest.importorskip("interpax")
+    from gauss_flows import HistogramCDF
+
+    data = jr.normal(jr.key(37), (2000, N_CHANNELS))
+    warp = HistogramCDF(n_bins=32, shape=(N_CHANNELS,), method="monotonic").fit(data)
+
+    # The premise: declared and autodiff log-dets genuinely differ here.
+    y_one = jnp.array([0.2, 0.5, 0.8, 0.35])[:N_CHANNELS]
+    _, declared = warp.inverse_and_log_det(y_one)
+    _, diagonal = jax.jvp(warp.inverse, (y_one,), (jnp.ones_like(y_one),))
+    assert jnp.abs(declared - jnp.sum(jnp.log(jnp.abs(diagonal)))) > 1e-4
+
+    masked = normalizing_kalman_filter(_masking_base(), warp)
+    plain = normalizing_kalman_filter(_unconditional_base(), warp)
+
+    y = jr.uniform(jr.key(38), (N_STEPS, N_CHANNELS), minval=0.05, maxval=0.95)
+    full = jnp.ones((N_STEPS, N_CHANNELS), dtype=bool)
+    assert jnp.abs(masked.log_prob(y, condition=full) - plain.log_prob(y)) < 1e-4
+
+
+def test_masking_still_drops_unobserved_channels_for_a_bespoke_log_det():
+    """Preserving the declared total must not stop the mask from masking.
+
+    Placeholder-independence is asserted for self-consistent warps in
+    `test_masked_log_prob_ignores_placeholder_values`. It cannot hold here: for
+    a bijection whose declared log-det is not its map's derivative, the two
+    properties — agreeing with the unmasked path, and ignoring unmeasured
+    values — are in direct conflict, and the residual either way is exactly
+    that bijection's own inconsistency. Agreement when nothing is missing wins,
+    because that case has an unambiguous right answer.
+    """
+    pytest.importorskip("interpax")
+    from gauss_flows import HistogramCDF
+
+    data = jr.normal(jr.key(39), (2000, N_CHANNELS))
+    warp = HistogramCDF(n_bins=32, shape=(N_CHANNELS,), method="monotonic").fit(data)
+    nkf = normalizing_kalman_filter(_masking_base(), warp)
+
+    y = jr.uniform(jr.key(40), (N_STEPS, N_CHANNELS), minval=0.05, maxval=0.95)
+    full = jnp.ones((N_STEPS, N_CHANNELS), dtype=bool)
+    partial = jr.bernoulli(jr.key(41), 0.6, (N_STEPS, N_CHANNELS))
+
+    assert not jnp.allclose(
+        nkf.log_prob(y, condition=full), nkf.log_prob(y, condition=partial)
+    )
+    assert jnp.isfinite(nkf.log_prob(y, condition=partial))
+
+
+def test_self_consistent_warp_satisfies_both_masking_properties():
+    """With a self-consistent warp there is no trade-off to make.
+
+    `HistogramCDF(method="linear")` reports exactly the autodiff derivative, so
+    the masked density both matches the unmasked path when nothing is missing
+    and ignores whatever sits in the unobserved slots.
+    """
+    pytest.importorskip("interpax")
+    from gauss_flows import HistogramCDF
+
+    data = jr.normal(jr.key(42), (2000, N_CHANNELS))
+    warp = HistogramCDF(n_bins=32, shape=(N_CHANNELS,), method="linear").fit(data)
+
+    y_one = jnp.array([0.2, 0.5, 0.8, 0.35])[:N_CHANNELS]
+    _, declared = warp.inverse_and_log_det(y_one)
+    _, diagonal = jax.jvp(warp.inverse, (y_one,), (jnp.ones_like(y_one),))
+    assert jnp.abs(declared - jnp.sum(jnp.log(jnp.abs(diagonal)))) < 1e-5
+
+    masked = normalizing_kalman_filter(_masking_base(), warp)
+    plain = normalizing_kalman_filter(_unconditional_base(), warp)
+    y = jr.uniform(jr.key(43), (N_STEPS, N_CHANNELS), minval=0.05, maxval=0.95)
+    full = jnp.ones((N_STEPS, N_CHANNELS), dtype=bool)
+    partial = jr.bernoulli(jr.key(44), 0.6, (N_STEPS, N_CHANNELS))
+
+    # Agrees with the unmasked path when nothing is missing ...
+    assert jnp.abs(masked.log_prob(y, condition=full) - plain.log_prob(y)) < 1e-4
+    # ... and ignores the placeholders when something is.
+    other = jnp.where(partial, y, 0.5)
+    assert (
+        jnp.abs(
+            masked.log_prob(y, condition=partial)
+            - masked.log_prob(other, condition=partial)
+        )
+        < 1e-4
+    )

@@ -104,10 +104,14 @@ Two details that follow from this and are easy to get wrong:
   term is summed under the mask. A plain `Transformed` sums it over all `T × M`
   entries, adding terms for values that were never measured — the density then
   stops being a marginal likelihood, off by a data-dependent offset. The
-  constructor wraps elementwise warps to handle this automatically. In the
-  mask-conditioned case (2) it cannot: a channel-mixing Jacobian does not
-  decompose per channel, so there `log_prob` is a training objective, not a
-  marginal likelihood.
+  constructor wraps elementwise warps to handle this automatically, subtracting
+  the unobserved channels' contributions from the warp's *own* log-determinant
+  rather than rebuilding the total from autodiff — so a bijection that reports a
+  log-det differing from its map's derivative (`HistogramCDF(method="monotonic")`
+  is the in-repo example) keeps its declared value, and an all-observed mask
+  reproduces the ordinary density exactly. In the mask-conditioned case (2) none
+  of this applies: a channel-mixing Jacobian does not decompose per channel, so
+  there `log_prob` is a training objective, not a marginal likelihood.
 - **A warp is classified structurally, never by measurement.** Sampling the
   Jacobian cannot establish diagonality, in two independent ways.
   `OrthogonalRotation` starts with zero Cayley parameters, so it *is* the identity
