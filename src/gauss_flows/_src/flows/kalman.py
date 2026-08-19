@@ -96,7 +96,6 @@ References:
 
 from __future__ import annotations
 
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 import jax.random as jr
@@ -123,6 +122,15 @@ _ELEMENTWISE_NAMES = frozenset(
         "Tanh",
     }
 )
+
+# Every bijection in this subpackage "acts independently on every dimension of
+# its input" (its own module docstring), which is exactly the property needed
+# here — and it is a contract of the subpackage rather than of one parameter
+# value, so it holds under training. Classifying by module keeps
+# `MixtureGaussianCDF`, `MixtureLogisticCDF`, `RQSplineMarginal`,
+# `HistogramCDF` and friends usable as warps, which a name allowlist would
+# silently exclude. Coupling variants live under `.coupling` and are unaffected.
+_ELEMENTWISE_MODULE = "gauss_flows._src.transforms.bijections.elementwise"
 
 # Number of random points at which the numerical probe evaluates the Jacobian.
 # A triangular Jacobian can look diagonal at an unlucky single point.
@@ -158,6 +166,8 @@ def _structurally_diagonal(bijection: AbstractBijection) -> bool | None:
         # Vmap gives a block-diagonal Jacobian whose blocks are the inner
         # bijection's — diagonal overall exactly when the block is.
         return _structurally_diagonal(bijection.bijection)
+    if type(bijection).__module__.startswith(_ELEMENTWISE_MODULE):
+        return True
     if type(bijection).__name__ in _ELEMENTWISE_NAMES:
         return True
     return None
@@ -193,37 +203,34 @@ def _probe_mixes_channels(bijection: AbstractBijection) -> bool:
     return False
 
 
-def _is_parameterised(bijection: AbstractBijection) -> bool:
-    """Whether the bijection carries trainable (inexact array) leaves."""
-    return any(eqx.is_inexact_array(leaf) for leaf in jax.tree.leaves(bijection))
-
-
 def _mixes_channels(bijection: AbstractBijection) -> bool:
     """Whether the bijection's Jacobian is not diagonal in the event axis.
 
-    Classification is by what the bijection *can represent*, not by its
-    Jacobian at its current parameter values. A one-time numerical probe would
-    admit a warp that is diagonal only at initialisation and becomes
-    channel-mixing as soon as training moves it —
-    `gauss_flows.OrthogonalRotation` is exactly that: its Cayley parameters
-    start at zero, so it probes as the identity, and any nonzero learned value
-    makes it a dense rotation. So the probe is used only for bijections with no
-    trainable leaves, where the current Jacobian is the only Jacobian.
+    Classification is **structural**, never by measurement. Sampling the
+    Jacobian cannot establish diagonality, in two independent ways:
+
+    - *across parameters* — `gauss_flows.OrthogonalRotation` initialises its
+      Cayley parameters to zero, so it literally is the identity when built and
+      probes as diagonal; any nonzero learned value makes it a dense rotation;
+    - *across inputs* — a parameter-free bijection need not have a constant
+      Jacobian either. A fixed triangular shear that only engages past a
+      threshold looks diagonal at every standard-normal probe point and mixes
+      channels in the tail, where no finite sample of probes will find it.
+
+    So an unrecognised bijection is reported as mixing regardless of what a
+    probe would say. `normalizing_kalman_filter` offers
+    ``assume_elementwise_warp`` for callers who know better than the type
+    system does.
 
     Args:
         bijection: An unconditional bijection with event shape ``(M,)``.
 
     Returns:
-        ``True`` if the bijection mixes channels, or if that cannot be ruled
-        out for every parameter value it could take.
+        ``True`` if the bijection mixes channels, or if being elementwise
+        cannot be established from its structure.
     """
     structural = _structurally_diagonal(bijection)
-    if structural is not None:
-        return not structural
-    if _is_parameterised(bijection):
-        # Unknown type with trainable leaves: unverifiable, so refused.
-        return True
-    return _probe_mixes_channels(bijection)
+    return True if structural is None else not structural
 
 
 class _MaskedLogDet(AbstractBijection):
@@ -295,20 +302,23 @@ silently corrupted by entries that were never measured (measured median error \
 missing). The failure looks like underfitting, not like a bug, which is why it \
 is refused here.
 
-A warp is treated as channel-mixing unless it is elementwise for EVERY
-parameter value, not merely at initialisation. An unrecognised bijection that
-carries trainable parameters is therefore refused too: a numerical probe
-describes one point in parameter space, and training moves it. gauss_flows'
-own OrthogonalRotation is the cautionary case — its Cayley parameters start at
-zero, so it probes as the identity, and any nonzero learned value makes it a
-dense rotation.
+A warp counts as elementwise only when that follows from its type, because
+measuring the Jacobian cannot establish it — not across parameter values
+(OrthogonalRotation starts at exactly the identity and trains into a dense
+rotation) and not across inputs (a fixed shear can engage only in the tail,
+where no finite set of probe points will look). Everything in flowjax's
+elementwise family and in gauss_flows' own
+`transforms.bijections.elementwise` subpackage is recognised, which covers
+MixtureGaussianCDF, MixtureLogisticCDF, RQSplineMarginal and HistogramCDF. For
+anything else, pass assume_elementwise_warp=True to assert the property
+yourself.
 
 Three combinations are coherent — pick one:
 
-  1. Use an elementwise warp, e.g.
-     ``Vmap(RationalQuadraticSpline(...), in_axes=None, axis_size=M)``, and put
-     the cross-channel structure in the state-space model's H and R, where the
-     Kalman recursion handles it exactly. Masking then stays exact.
+   1. Use an elementwise warp — ``MixtureGaussianCDF``, ``RQSplineMarginal``,
+      or ``Vmap(RationalQuadraticSpline(...), in_axes=None, axis_size=M)`` —
+      and put the cross-channel structure in the state-space model's H and R,
+      where the Kalman recursion handles it exactly. Masking then stays exact.
   2. Condition the warp on the mask, so the transform is at least a
      well-defined function of what was observed. The warp must then learn up
      to 2**M masking patterns, and exactness is not recovered.
@@ -321,6 +331,7 @@ def normalizing_kalman_filter(
     warp: AbstractBijection,
     *,
     n_steps: int | None = None,
+    assume_elementwise_warp: bool = False,
 ) -> Transformed:
     r"""Compose a state-space base with a per-timestep observation warp.
 
@@ -340,6 +351,14 @@ def normalizing_kalman_filter(
             observations. It is applied independently at each of the ``T``
             timesteps.
         n_steps: Time-axis size ``T``. Defaults to ``base.shape[0]``.
+        assume_elementwise_warp: Assert that ``warp`` is elementwise when its
+            type is not recognised as such. Only consulted for a masked base.
+            gauss_flows cannot verify the property — see `_mixes_channels` for
+            why sampling the Jacobian cannot establish it — so this is a claim
+            you are making, and getting it wrong silently corrupts the observed
+            channels and invalidates the marginal likelihood. A cheap numerical
+            probe still runs and refuses an assertion it can immediately
+            disprove, but passing it is not evidence of correctness.
 
     Returns:
         A `flowjax.distributions.Transformed` over ``(T, M)`` observations.
@@ -410,7 +429,19 @@ def normalizing_kalman_filter(
     masked = base.cond_shape is not None
     elementwise = warp.cond_shape is None and not _mixes_channels(warp)
     if masked and warp.cond_shape is None and not elementwise:
-        raise ValueError(_MASKED_COUPLING_MESSAGE)
+        if not assume_elementwise_warp:
+            raise ValueError(_MASKED_COUPLING_MESSAGE)
+        # Trust the caller, but reject an assertion the probe already refutes.
+        if _probe_mixes_channels(warp):
+            raise ValueError(
+                "assume_elementwise_warp=True, but a numerical probe found "
+                "off-diagonal Jacobian mass in this warp, so the assertion is "
+                "false as written. (The probe is only a sanity check — it can "
+                "miss channel mixing that appears at other inputs or other "
+                "parameter values, so passing it would not have proved the "
+                "warp elementwise.)"
+            )
+        elementwise = True
 
     if warp.cond_shape is not None:
         # Case 2 only. The warp's condition is one timestep's worth; the base's

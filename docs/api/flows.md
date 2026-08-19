@@ -108,12 +108,19 @@ Two details that follow from this and are easy to get wrong:
   mask-conditioned case (2) it cannot: a channel-mixing Jacobian does not
   decompose per channel, so there `log_prob` is a training objective, not a
   marginal likelihood.
-- **A warp is classified by what it can represent, not by its Jacobian at
-  initialisation.** `OrthogonalRotation` starts with zero Cayley parameters, so it
-  *is* the identity when you build it and would pass any one-time numerical
-  probe — then becomes a dense rotation the moment an optimiser touches it.
-  Unrecognised bijections carrying trainable parameters are refused over a masked
-  base for the same reason.
+- **A warp is classified structurally, never by measurement.** Sampling the
+  Jacobian cannot establish diagonality, in two independent ways.
+  `OrthogonalRotation` starts with zero Cayley parameters, so it *is* the identity
+  when you build it and would pass any probe — then becomes a dense rotation the
+  moment an optimiser touches it. And a *parameter-free* bijection need not have a
+  constant Jacobian either: a fixed shear that engages only past a threshold looks
+  diagonal at every probe point drawn from the bulk and mixes channels in the tail.
+  So classification comes from the type. Recognised are flowjax's elementwise
+  family and everything in gauss_flows' own `transforms.bijections.elementwise`
+  subpackage — `MixtureGaussianCDF`, `MixtureLogisticCDF`, `RQSplineMarginal`,
+  `HistogramCDF`, `InverseGaussCDF`. For a warp outside both, pass
+  `assume_elementwise_warp=True` to assert the property yourself; a probe still
+  refuses assertions it can immediately disprove, but passing it proves nothing.
 
 ::: gauss_flows.normalizing_kalman_filter
 

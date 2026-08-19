@@ -20,8 +20,20 @@ from flowjax.bijections import (
 )
 from flowjax.distributions import Normal, Transformed
 
-from gauss_flows import NumpyroBase, normalizing_kalman_filter
-from gauss_flows._src.flows.kalman import _mixes_channels
+from gauss_flows import (
+    InverseGaussCDF,
+    MixtureGaussianCDF,
+    MixtureGaussianCDFCoupling,
+    MixtureLogisticCDF,
+    NumpyroBase,
+    RQSplineMarginal,
+    normalizing_kalman_filter,
+)
+from gauss_flows._src.flows.kalman import (
+    _N_PROBE_POINTS,
+    _mixes_channels,
+    _probe_mixes_channels,
+)
 from gauss_flows._src.transforms.bijections.linear.rotation import (
     HouseholderRotation,
     OrthogonalRotation,
@@ -530,7 +542,7 @@ def test_warp_that_is_diagonal_only_at_initialisation_is_rejected():
     assert jnp.max(jnp.abs(off_diagonal)) == 0.0
     # ... and refused anyway.
     assert _mixes_channels(rotation)
-    with pytest.raises(ValueError, match="not merely at initialisation"):
+    with pytest.raises(ValueError, match="follows from its type"):
         normalizing_kalman_filter(_conditional_base(), rotation)
 
 
@@ -546,12 +558,97 @@ def test_mixing_capable_warps_are_still_fine_over_an_unmasked_base():
         )
 
 
-def test_unparameterised_unknown_bijection_is_still_probed():
-    """A fixed bijection has one Jacobian, so measuring it is sound."""
+def test_repo_elementwise_bijections_are_admitted():
+    """The package's own marginal bijections must work as warps.
+
+    They are elementwise by the subpackage's documented contract, and they are
+    what the docs tell users to reach for — a name-based allowlist silently
+    excluded them.
+    """
+    warps = {
+        "MixtureGaussianCDF": MixtureGaussianCDF(shape=(N_CHANNELS,), n_components=4),
+        "MixtureLogisticCDF": MixtureLogisticCDF(shape=(N_CHANNELS,), n_components=4),
+        "RQSplineMarginal": RQSplineMarginal(n_bins=6, shape=(N_CHANNELS,)),
+        "InverseGaussCDF": InverseGaussCDF(shape=(N_CHANNELS,)),
+    }
+    for name, warp in warps.items():
+        assert not _mixes_channels(warp), name
+        nkf = normalizing_kalman_filter(_conditional_base(), warp)
+        assert nkf.shape == (N_STEPS, N_CHANNELS), name
+
+
+@pytest.mark.parametrize(
+    ("name", "build"),
+    [
+        ("MixtureGaussianCDF", lambda: MixtureGaussianCDF(shape=(6,), n_components=4)),
+        ("RQSplineMarginal", lambda: RQSplineMarginal(n_bins=6, shape=(6,))),
+    ],
+)
+def test_repo_elementwise_bijections_really_are_diagonal(name, build):
+    """Independent check of the module-path rule's premise."""
+    warp = build()
+    for seed in range(4):
+        x = 0.4 * jr.normal(jr.key(seed), (6,))
+        jacobian = jax.jacfwd(warp.transform)(x)
+        off_diagonal = jacobian - jnp.diag(jnp.diagonal(jacobian))
+        assert jnp.max(jnp.abs(off_diagonal)) == 0.0, name
+
+
+def test_coupling_variant_of_a_marginal_is_not_admitted():
+    """The module-path rule must not leak to the coupling namespace."""
+    coupling = MixtureGaussianCDFCoupling(
+        jr.key(30), shape=(N_CHANNELS,), n_components=4, nn_width=8, nn_depth=1
+    )
+    assert _mixes_channels(coupling)
+
+
+def test_unknown_bijection_is_refused_even_without_parameters():
+    """A parameter-free warp can still be input-dependent.
+
+    Having no trainable leaves does not make the Jacobian constant in the
+    input, so probe points drawn from one region say nothing about another. The
+    shear below is exactly diagonal on the probe points and mixes channels past
+    a threshold.
+    """
+    threshold = 3.0
+
+    class _TailShear(eqx.Module):
+        shape: tuple[int, ...] = (N_CHANNELS,)
+        cond_shape: tuple[int, ...] | None = None
+
+        def transform(self, x, condition=None):
+            # Identity everywhere the probe looks; a shear out in the tail.
+            shear = jnp.where(x[0] > threshold, x[0], 0.0)
+            return x.at[1].add(shear)
+
+        def transform_and_log_det(self, x, condition=None):
+            return self.transform(x), jnp.zeros(())
+
+        def inverse_and_log_det(self, y, condition=None):
+            shear = jnp.where(y[0] > threshold, y[0], 0.0)
+            return y.at[1].add(-shear), jnp.zeros(())
+
+    warp = _TailShear()
+    # Diagonal at every point the probe visits ...
+    for seed in range(_N_PROBE_POINTS):
+        jacobian = jax.jacfwd(warp.transform)(jr.normal(jr.key(seed), (N_CHANNELS,)))
+        off_diagonal = jacobian - jnp.diag(jnp.diagonal(jacobian))
+        assert jnp.max(jnp.abs(off_diagonal)) == 0.0
+    assert not _probe_mixes_channels(warp)
+    # ... and channel-mixing in the tail.
+    tail = jnp.array([threshold + 1.0] + [0.0] * (N_CHANNELS - 1))
+    tail_jacobian = jax.jacfwd(warp.transform)(tail)
+    assert jnp.abs(tail_jacobian[1, 0]) > 0.0
+    # So it is refused, probe or no probe.
+    assert _mixes_channels(warp)
+    with pytest.raises(ValueError, match="follows from its type"):
+        normalizing_kalman_filter(_conditional_base(), warp)
+
+
+def test_assume_elementwise_warp_opts_a_custom_warp_in():
+    """The escape hatch for warps the type system cannot recognise."""
 
     class _ScaleByTwo(eqx.Module):
-        """Elementwise, no trainable leaves."""
-
         shape: tuple[int, ...] = (N_CHANNELS,)
         cond_shape: tuple[int, ...] | None = None
 
@@ -564,4 +661,52 @@ def test_unparameterised_unknown_bijection_is_still_probed():
         def inverse_and_log_det(self, y, condition=None):
             return y / 2.0, -jnp.log(2.0) * N_CHANNELS
 
-    assert not _mixes_channels(_ScaleByTwo())
+    warp = _ScaleByTwo()
+    assert _mixes_channels(warp)  # unrecognised type
+    with pytest.raises(ValueError, match="follows from its type"):
+        normalizing_kalman_filter(_conditional_base(), warp)
+    nkf = normalizing_kalman_filter(
+        _conditional_base(), warp, assume_elementwise_warp=True
+    )
+    assert nkf.shape == (N_STEPS, N_CHANNELS)
+
+
+def test_assume_elementwise_warp_still_refuses_a_refutable_assertion():
+    """The opt-in trusts the caller, but not past an immediate contradiction."""
+    with pytest.raises(ValueError, match="the assertion is false as written"):
+        normalizing_kalman_filter(
+            _conditional_base(),
+            _coupling_warp(jr.key(31)),
+            assume_elementwise_warp=True,
+        )
+
+
+def test_assume_elementwise_warp_masks_the_log_det_too():
+    """An opted-in warp must get the same marginal-likelihood treatment."""
+
+    class _ScaleByThree(eqx.Module):
+        shape: tuple[int, ...] = (N_CHANNELS,)
+        cond_shape: tuple[int, ...] | None = None
+
+        def transform(self, x, condition=None):
+            return 3.0 * x
+
+        def transform_and_log_det(self, x, condition=None):
+            return 3.0 * x, jnp.log(3.0) * N_CHANNELS
+
+        def inverse(self, y, condition=None):
+            return y / 3.0
+
+        def inverse_and_log_det(self, y, condition=None):
+            return y / 3.0, -jnp.log(3.0) * N_CHANNELS
+
+    warp = _ScaleByThree()
+    nkf = normalizing_kalman_filter(_masking_base(), warp, assume_elementwise_warp=True)
+    y = 0.4 * jr.normal(jr.key(32), (N_STEPS, N_CHANNELS))
+    mask = jr.bernoulli(jr.key(33), 0.6, (N_STEPS, N_CHANNELS))
+
+    z = y / 3.0
+    expected = jnp.sum(
+        jnp.where(mask, jax.scipy.stats.norm.logpdf(z) - jnp.log(3.0), 0.0)
+    )
+    assert jnp.abs(nkf.log_prob(y, condition=mask) - expected) < 1e-5
