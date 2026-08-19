@@ -710,3 +710,94 @@ def test_assume_elementwise_warp_masks_the_log_det_too():
         jnp.where(mask, jax.scipy.stats.norm.logpdf(z) - jnp.log(3.0), 0.0)
     )
     assert jnp.abs(nkf.log_prob(y, condition=mask) - expected) < 1e-5
+
+
+def test_scalar_bijection_lifted_by_vmap_is_admitted():
+    """`Vmap` over a scalar bijection is elementwise whatever it contains.
+
+    Each mapped block has event shape `()`, so the Jacobian blocks are 1x1 and
+    the whole thing is diagonal by construction — no allowlist entry and no
+    `assume_elementwise_warp` needed for the common "lift my custom scalar
+    transform over the channels" path.
+    """
+
+    class _ScalarCube(eqx.Module):
+        """An unrecognised scalar bijection: y = x**3."""
+
+        shape: tuple[int, ...] = ()
+        cond_shape: tuple[int, ...] | None = None
+
+        def transform(self, x, condition=None):
+            return x**3
+
+        def transform_and_log_det(self, x, condition=None):
+            return x**3, jnp.log(3.0 * x**2)
+
+        def inverse(self, y, condition=None):
+            return jnp.sign(y) * jnp.abs(y) ** (1.0 / 3.0)
+
+        def inverse_and_log_det(self, y, condition=None):
+            x = self.inverse(y)
+            return x, -jnp.log(3.0 * x**2)
+
+    # Rejected on its own — the type says nothing about it.
+    assert _mixes_channels(_ScalarCube())
+    # Admitted once lifted over the channel axis.
+    lifted = Vmap(_ScalarCube(), in_axes=None, axis_size=N_CHANNELS)
+    assert lifted.shape == (N_CHANNELS,)
+    assert not _mixes_channels(lifted)
+    assert normalizing_kalman_filter(_conditional_base(), lifted).shape == (
+        N_STEPS,
+        N_CHANNELS,
+    )
+
+
+def test_lifted_scalar_warp_gets_the_masked_log_det():
+    """The Vmap-of-scalar path must still produce a marginal likelihood."""
+    scale = 2.0
+
+    class _ScalarScale(eqx.Module):
+        shape: tuple[int, ...] = ()
+        cond_shape: tuple[int, ...] | None = None
+
+        def transform(self, x, condition=None):
+            return scale * x
+
+        def transform_and_log_det(self, x, condition=None):
+            return scale * x, jnp.log(scale)
+
+        def inverse(self, y, condition=None):
+            return y / scale
+
+        def inverse_and_log_det(self, y, condition=None):
+            return y / scale, -jnp.log(scale)
+
+    warp = Vmap(_ScalarScale(), in_axes=None, axis_size=N_CHANNELS)
+    nkf = normalizing_kalman_filter(_masking_base(), warp)
+
+    y = 0.4 * jr.normal(jr.key(34), (N_STEPS, N_CHANNELS))
+    mask = jr.bernoulli(jr.key(35), 0.6, (N_STEPS, N_CHANNELS))
+    expected = jnp.sum(
+        jnp.where(mask, jax.scipy.stats.norm.logpdf(y / scale) - jnp.log(scale), 0.0)
+    )
+    assert jnp.abs(nkf.log_prob(y, condition=mask) - expected) < 1e-5
+
+
+def test_inverted_gaussianiser_is_the_warp_that_maps_base_to_data():
+    """The recommended `Invert(MixtureGaussianCDF(...))` must be admitted.
+
+    `MixtureGaussianCDF.transform` runs data → Gaussian, so used directly as a
+    warp it would model the pushforward through the Gaussianiser rather than
+    the observations. `Invert` puts it the right way round, and the guard must
+    accept it either way (both are elementwise).
+    """
+    gaussianiser = MixtureGaussianCDF(shape=(N_CHANNELS,), n_components=4)
+    warp = Invert(gaussianiser)
+    assert not _mixes_channels(warp)
+
+    nkf = normalizing_kalman_filter(_conditional_base(), warp)
+    assert nkf.shape == (N_STEPS, N_CHANNELS)
+
+    # The direction claim itself: warp.transform is the Gaussianiser's inverse.
+    z = 0.3 * jr.normal(jr.key(36), (N_CHANNELS,))
+    assert jnp.allclose(warp.transform(z), gaussianiser.inverse(z), atol=1e-5)

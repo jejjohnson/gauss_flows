@@ -118,9 +118,19 @@ Two details that follow from this and are easy to get wrong:
   So classification comes from the type. Recognised are flowjax's elementwise
   family and everything in gauss_flows' own `transforms.bijections.elementwise`
   subpackage — `MixtureGaussianCDF`, `MixtureLogisticCDF`, `RQSplineMarginal`,
-  `HistogramCDF`, `InverseGaussCDF`. For a warp outside both, pass
+  `HistogramCDF`, `InverseGaussCDF`. A scalar bijection lifted with
+  `Vmap(..., axis_size=M)` is admitted whatever it contains, since 1x1 Jacobian
+  blocks are diagonal by construction. For a warp outside all of that, pass
   `assume_elementwise_warp=True` to assert the property yourself; a probe still
   refuses assertions it can immediately disprove, but passing it proves nothing.
+- **Mind the warp's direction.** `warp` maps the Gaussian base **to**
+  observations. The Gaussianising CDFs go the other way — `MixtureGaussianCDF`
+  maps data to Gaussian — so they belong inside an `Invert`:
+  `Invert(MixtureGaussianCDF(n_components=8, shape=(M,)))`. Passing one directly
+  builds a model of the pushforward through the Gaussianiser rather than of the
+  observations. `fit_rbig` already follows this convention, returning
+  `Transformed(base, Invert(Chain(...)))`. `RQSplineMarginal` and a lifted
+  `RationalQuadraticSpline` are direction-neutral.
 
 ::: gauss_flows.normalizing_kalman_filter
 

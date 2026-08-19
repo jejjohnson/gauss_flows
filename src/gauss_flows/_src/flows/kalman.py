@@ -68,7 +68,17 @@ differently:
    structure lives in the state-space model's ``H`` and ``R``, where the Kalman
    recursion handles it exactly. **This is the recommendation**, and it is a
    deliberate deviation from the source paper, which uses a coupling flow
-   specifically to model cross-series dependence. The change of variables is
+   specifically to model cross-series dependence.
+
+   Mind the direction when reaching for the package's marginal bijections.
+   ``warp`` maps the Gaussian base to observations, whereas a Gaussianiser like
+   `gauss_flows.MixtureGaussianCDF` maps data to Gaussian — its *inverse* is
+   the warp, so wrap it: ``Invert(MixtureGaussianCDF(...))``. Same for
+   `MixtureLogisticCDF`, `HistogramCDF` and `InverseGaussCDF`. This is the
+   convention `gauss_flows.fit_rbig` already follows when it returns
+   ``Transformed(base, Invert(Chain(...)))``. `RQSplineMarginal` and a lifted
+   `flowjax.bijections.RationalQuadraticSpline` carry no Gaussianising
+   direction and can be used either way round. The change of variables is
    restricted to the observed channels automatically — see `_MaskedLogDet`,
    without which the log-det would pick up terms for entries the base
    marginalised away and the density would stop being a marginal likelihood.
@@ -164,7 +174,13 @@ def _structurally_diagonal(bijection: AbstractBijection) -> bool | None:
         return _structurally_diagonal(bijection.bijection)
     if isinstance(bijection, Vmap):
         # Vmap gives a block-diagonal Jacobian whose blocks are the inner
-        # bijection's — diagonal overall exactly when the block is.
+        # bijection's — diagonal overall exactly when the block is. A scalar
+        # inner makes those blocks 1x1, which is diagonal no matter what the
+        # inner does, so lifting an unrecognised scalar bijection over the
+        # channel axis is provably elementwise: no allowlist entry needed, and
+        # no assume_elementwise_warp.
+        if bijection.bijection.shape == ():
+            return True
         return _structurally_diagonal(bijection.bijection)
     if type(bijection).__module__.startswith(_ELEMENTWISE_MODULE):
         return True
@@ -315,10 +331,15 @@ yourself.
 
 Three combinations are coherent — pick one:
 
-   1. Use an elementwise warp — ``MixtureGaussianCDF``, ``RQSplineMarginal``,
-      or ``Vmap(RationalQuadraticSpline(...), in_axes=None, axis_size=M)`` —
-      and put the cross-channel structure in the state-space model's H and R,
-      where the Kalman recursion handles it exactly. Masking then stays exact.
+  1. Use an elementwise warp and put the cross-channel structure in the
+     state-space model's H and R, where the Kalman recursion handles it
+     exactly. Masking then stays exact. Mind the direction — ``warp`` maps the
+     Gaussian base to observations, so a Gaussianising CDF, which maps data to
+     Gaussian, has to be inverted:
+
+         Invert(MixtureGaussianCDF(n_components=8, shape=(M,)))
+         RQSplineMarginal(n_bins=8, shape=(M,))       # direction-neutral
+         Vmap(RationalQuadraticSpline(...), in_axes=None, axis_size=M)
   2. Condition the warp on the mask, so the transform is at least a
      well-defined function of what was observed. The warp must then learn up
      to 2**M masking patterns, and exactness is not recovered.
