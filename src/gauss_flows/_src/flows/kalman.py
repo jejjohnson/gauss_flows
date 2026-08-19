@@ -82,9 +82,11 @@ differently:
    ``[0, 1]`` while the base hands it values across all of ℝ — everything
    outside gets clamped to the fitted bin edges, giving boundary atoms and an
    unnormalised density. Compose it with the probit step that
-   `MixtureGaussianCDF` already has built in::
+   `MixtureGaussianCDF` already has built in:
 
-       Invert(Chain([HistogramCDF(...), InverseGaussCDF(shape=(M,))]))
+   ```python
+   Invert(Chain([HistogramCDF(...), InverseGaussCDF(shape=(M,))]))
+   ```
 
    `RQSplineMarginal` and a lifted
    `flowjax.bijections.RationalQuadraticSpline` carry no Gaussianising
@@ -368,6 +370,12 @@ class _MaskedLogDet(AbstractBijection):
         per channel by construction, and it depends on the mask rather than on
         the discarded values, so the result stays independent of whatever the
         placeholder happened to be.
+
+        This applies to the **inverse** (likelihood) direction only, where the
+        incoming values are observations and the unobserved slots hold junk.
+        The forward direction is sampling, and there every entry is a genuine
+        latent draw from the base — the model's own imputation of the missing
+        channels — so substituting would replace it with a constant.
         """
         return jnp.where(mask, x, reference)  # (M,)
 
@@ -396,12 +404,15 @@ class _MaskedLogDet(AbstractBijection):
         return declared - jnp.sum(jnp.where(mask, 0.0, per_channel))
 
     def transform_and_log_det(self, x, condition=None):
-        # Base space: the state-space base is Gaussian, so zero is in support.
-        safe = self._safe(x, condition, jnp.zeros(self.shape))  # (M,)
-        y, declared = self.bijection.transform_and_log_det(safe)  # (M,), ()
-        return y, self._masked_log_det(
-            self.bijection.transform, declared, safe, condition
-        )
+        # No substitution on this path. Sampling arrives here with a latent
+        # draw the base has already produced for *every* entry, including the
+        # unobserved ones — that draw is the state-space model's imputation of
+        # what was not measured, and it is valid input by construction.
+        # Overwriting it would return a constant, `warp.transform(0)`, with
+        # zero variance wherever the mask is false. Only the log-determinant
+        # needs masking here.
+        y, declared = self.bijection.transform_and_log_det(x)  # (M,), ()
+        return y, self._masked_log_det(self.bijection.transform, declared, x, condition)
 
     def inverse_and_log_det(self, y, condition=None):
         # Data space: the warp's image is exactly the support of the

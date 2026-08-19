@@ -1068,3 +1068,28 @@ def test_histogram_cdf_needs_a_probit_step_to_be_a_valid_warp():
     observations = jax.vmap(warp.transform)(latent)
     mask = jr.bernoulli(jr.key(50), 0.6, (N_STEPS, N_CHANNELS))
     assert jnp.isfinite(nkf.log_prob(observations, condition=mask))
+
+
+def test_sampling_under_a_partial_mask_keeps_the_imputation_draws():
+    """Missing positions must carry the base's predictive draw, not a constant.
+
+    Sampling reaches the warp with a latent the base has already drawn for
+    *every* entry — including the unobserved ones, where it is the state-space
+    model's imputation. Substituting a reference there (which the likelihood
+    path must do, since observations carry placeholders) collapses every
+    missing position onto `warp.transform(0)` with zero variance.
+    """
+    warp = Vmap(Exp(), in_axes=None, axis_size=N_CHANNELS)
+    nkf = normalizing_kalman_filter(_masking_base(), warp)
+    mask = jr.bernoulli(jr.key(51), 0.5, (N_STEPS, N_CHANNELS))
+    assert not jnp.all(mask) and jnp.any(mask)  # a genuinely partial mask
+
+    samples = nkf.sample(jr.key(52), (200,), condition=mask)  # (200, T, M)
+    assert samples.shape == (200, N_STEPS, N_CHANNELS)
+
+    spread = samples.std(axis=0)  # (T, M)
+    # Unobserved entries vary as much as observed ones ...
+    assert jnp.min(spread[~mask]) > 0.0
+    assert spread[~mask].mean() > 0.5 * spread[mask].mean()
+    # ... and are not pinned to the substitution reference.
+    assert not jnp.allclose(samples[:, ~mask], warp.transform(jnp.zeros(N_CHANNELS))[0])
