@@ -33,7 +33,7 @@ dependencies = [
     "optimistix>=0.0.9",
     "scikit-learn>=1.3",
     "diffrax>=0.7.2,<0.8",
-    "matfree>=0.5.5,<0.7",
+    "matfree>=0.6,<0.7",
 ]
 
 [project.optional-dependencies]

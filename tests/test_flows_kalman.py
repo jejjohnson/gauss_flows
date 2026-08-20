@@ -372,10 +372,9 @@ def test_returns_a_transformed():
 def _gaussx_or_skip():
     """Import gaussx, skipping on ANY failure.
 
-    `pytest.importorskip` only catches ImportError, and gaussx currently fails
-    here with an AttributeError instead: it needs matfree>=0.6
-    (`sampler_signs`) while gauss_flows is pinned to the pre-0.6
-    `sampler_rademacher`.
+    `pytest.importorskip` only catches ImportError, and a gaussx whose own pins
+    are unmet can fail partway through its import with other exception types
+    (seen in practice as an AttributeError from a matfree version mismatch).
     """
     try:
         import gaussx

@@ -69,7 +69,9 @@ def hutchinson_divergence(
 
     x_array = jnp.asarray(x)
     sampler = _make_sampler(x_array, n_samples=n_samples, distribution=distribution)
-    estimator = stochtrace.estimator(stochtrace.integrand_trace(), sampler)
+    estimator = stochtrace.estimator_monte_carlo(
+        stochtrace.monte_carlo_trace(), sampler
+    )
 
     def jacobian_matvec(v: Array) -> Array:
         # Forward-mode autodiff gives J_f(x) @ v in linear complexity, which is
@@ -92,7 +94,7 @@ def _make_sampler(
     distribution: _ProbeDistribution,
 ):
     if distribution == "rademacher":
-        return stochtrace.sampler_rademacher(jnp.zeros_like(x), num=n_samples)
+        return stochtrace.sampler_signs(jnp.zeros_like(x), num=n_samples)
     if distribution == "normal":
         return stochtrace.sampler_normal(jnp.zeros_like(x), num=n_samples)
     raise ValueError(
