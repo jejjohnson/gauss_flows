@@ -5,6 +5,7 @@
 - `.rbig` holds the classic iterative-RBIG constructor.
 - `.kalman` holds the Normalizing Kalman Filter constructor.
 - `.conjugate_filter` holds the Ensemble Conjugate Transform Filter.
+- `.transform_filter` holds the warped-coordinates filter wrapper.
 """
 
 from gauss_flows._src.flows.class_cond_flow import ClassCondFlow
@@ -19,12 +20,14 @@ from gauss_flows._src.flows.gaussianization import (
 from gauss_flows._src.flows.kalman import normalizing_kalman_filter
 from gauss_flows._src.flows.rbig import iterative_rbig
 from gauss_flows._src.flows.survae import SurVAEFlow
+from gauss_flows._src.flows.transform_filter import TransformFilter
 
 
 __all__ = [
     "ClassCondFlow",
     "ConjugateTransformFilter",
     "SurVAEFlow",
+    "TransformFilter",
     "coupling_gaussianization_flow",
     "gaussianization_flow",
     "iterative_rbig",
