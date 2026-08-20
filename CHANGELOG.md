@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.9](https://github.com/jejjohnson/gauss_flows/compare/v0.1.8...v0.1.9) (2026-08-20)
+
+
+### Features
+
+* **flows:** TransformFilter — run any Gaussian filter in warped coordinates ([#149](https://github.com/jejjohnson/gauss_flows/issues/149)) ([ecb058f](https://github.com/jejjohnson/gauss_flows/commit/ecb058fbfd3e4b8460c79d328170bd66e209d1a5))
+
+
+### Bug Fixes
+
+* **deps:** require matfree&gt;=0.6, migrate stochtrace calls, unblock gaussx co-install ([#148](https://github.com/jejjohnson/gauss_flows/issues/148)) ([bf4b862](https://github.com/jejjohnson/gauss_flows/commit/bf4b862400af8da38c1510ea36d5bc89d6aaf5bc))
+
 ## [0.1.8](https://github.com/jejjohnson/gauss_flows/compare/v0.1.7...v0.1.8) (2026-07-02)
 
 
