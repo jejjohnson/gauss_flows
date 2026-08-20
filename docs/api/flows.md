@@ -49,8 +49,8 @@ gradient training. The result is an ordinary flow that can be used as-is or fine
 
 ## State-space flows
 
-Two constructions that put a normalizing flow and a state-space model together.
-Both take their state-space pieces from [`gaussx`](https://github.com/jejjohnson/gaussx),
+Three constructions that put a normalizing flow and a state-space model together.
+All take their state-space pieces from [`gaussx`](https://github.com/jejjohnson/gaussx),
 which is **not a declared dependency** of gauss_flows: gaussx is not published to
 PyPI, and the optional `interp` extra's interpax caps `lineax` at `<=0.1.0` while
 gaussx needs `>=0.1.1`. Core gauss_flows and gaussx co-install cleanly; install
@@ -62,8 +62,8 @@ pip install git+https://github.com/jejjohnson/gaussx.git
 
 `normalizing_kalman_filter` itself never imports gaussx — it duck-types on the
 base distribution's `cond_shape` — so it works with any `(T, M)`-shaped base.
-`ConjugateTransformFilter` imports `gaussx.enkf_analysis` lazily and raises an
-actionable `ImportError` when it is missing.
+`ConjugateTransformFilter` and `TransformFilter` import gaussx lazily and raise
+an actionable `ImportError` when it is missing.
 
 ### Normalizing Kalman Filter
 
@@ -184,3 +184,45 @@ implementation hand-specifies per experiment.
 ::: gauss_flows.ConjugateTransformFilter
 
 ::: gauss_flows.rbig_conjugate_filter
+
+### Transform Filter
+
+`TransformFilter` runs any Gaussian filter in warped coordinates. It composes
+bijections into the dynamics and observation operators,
+
+$$
+\tilde f = \Gamma_x^{-1} \circ f \circ \Gamma_x, \qquad
+\tilde h = \Gamma_y^{-1} \circ h \circ \Gamma_x,
+$$
+
+and delegates to `gaussx.nonlinear_kalman_filter` (the integrator passed
+through selects EKF / UKF / CKF / GHKF / Monte Carlo) or, for the ensemble
+case, to `gaussx.enkf_analysis`. Warping only the observation preserves
+conjugacy and is the territory of the two constructions above; warping the
+**state** breaks conjugacy and makes the predict step non-Gaussian, which is
+why the moment-based path needs an integrator even for linear physical
+dynamics.
+
+**What this buys — and what it does not.** Measured on a strictly positive
+2-D state with saturating growth and multiplicative noise (T = 40), against a
+physical-space filter with noise matched at the operating point:
+
+- **Support:** 0/80 latent 95% credible intervals cross zero, against 54/80
+  (EKF) and 57/80 (UKF) in physical coordinates; the ensemble analysis
+  produces 0/8,000 negative members against 743/8,000.
+- **Calibration:** NLPD improves from 1.35 to 0.24.
+- **Point accuracy: no win.** RMSE on the posterior mean is a wash (within a
+  few percent, either direction, depending on the problem and precision).
+
+A user who adopts this expecting RMSE wins will be disappointed, and will be
+right to be — the feature buys calibration and support, not point accuracy.
+
+Two traps the API is shaped around: `predictive()` returns the **quadrature
+mean**, because pushing the latent mean through the warp yields the
+pushforward *median* (comparing that against a physical-space mean silently
+mixes estimands and once flipped this feature's own benchmark conclusions);
+and `predictive_interval()` offers transformed quantiles **only**, because a
+symmetric moment interval in physical space is exactly what reintroduces
+impossible values.
+
+::: gauss_flows.TransformFilter

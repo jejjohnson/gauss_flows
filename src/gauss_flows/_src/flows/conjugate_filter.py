@@ -39,37 +39,19 @@ from __future__ import annotations
 from typing import Any
 
 import equinox as eqx
-import jax
 from flowjax.bijections import AbstractBijection
 from jax import Array
 from jaxtyping import PRNGKeyArray
 
+# The lazy gaussx import and the warp / EnKF / unwarp plumbing are shared
+# with `TransformFilter` -- this class is its observation-warp special case.
+# `_require_gaussx` is re-exported here because this module's tests exercise
+# the import-failure path through it.
+from gauss_flows._src.flows.transform_filter import (
+    _require_gaussx as _require_gaussx,
+    _warped_enkf_analysis,
+)
 from gauss_flows._src.init.rbig import fit_rbig
-
-
-def _require_gaussx():
-    """Import `gaussx.enkf_analysis`, with an actionable error if absent."""
-    try:
-        # gaussx is deliberately not a declared dependency (see the ImportError
-        # below), so it is absent from the typecheck environment.
-        from gaussx import enkf_analysis  # ty: ignore[unresolved-import]
-    # Catching Exception, not ImportError: gaussx can be *present* yet fail
-    # partway through its own import when its pins are unmet (seen in practice
-    # as an AttributeError from a matfree version mismatch). Narrowing to
-    # ImportError would let that surface as an opaque traceback from a package
-    # the caller never imported, which is what this helper exists to prevent.
-    except Exception as exc:  # pragma: no cover - exercised by hand
-        raise ImportError(
-            "ConjugateTransformFilter needs the 'gaussx' package for its "
-            "ensemble Kalman analysis step. gaussx is NOT a declared "
-            "dependency of gauss_flows -- it is not published to PyPI, and "
-            "the optional `interp` extra's interpax caps lineax at <=0.1.0 "
-            "while gaussx needs >=0.1.1. It co-installs cleanly with core "
-            "gauss_flows: "
-            "`pip install git+https://github.com/jejjohnson/gaussx.git`. "
-            f"The underlying failure was {type(exc).__name__}: {exc}"
-        ) from exc
-    return enkf_analysis
 
 
 class ConjugateTransformFilter(eqx.Module):
@@ -190,7 +172,6 @@ class ConjugateTransformFilter(eqx.Module):
                 ``perturbed_obs`` are given (the latter raised by
                 `gaussx.enkf_analysis`).
         """
-        enkf_analysis = _require_gaussx()
         obs_warp = self.warp if self.obs_warp is None else self.obs_warp
 
         if obs_warp.shape != obs_particles.shape[1:]:
@@ -208,25 +189,17 @@ class ConjugateTransformFilter(eqx.Module):
                 "the whole state."
             )
 
-        latent = jax.vmap(self.warp.inverse)(particles)  # (J, N) latent state
-        latent_obs = jax.vmap(obs_warp.inverse)(obs_particles)  # (J, M)
-        latent_observation = obs_warp.inverse(observation)  # (M,)
-        latent_perturbed = (
-            None
-            if perturbed_obs is None
-            else jax.vmap(obs_warp.inverse)(perturbed_obs)  # (J, M)
-        )
-
-        latent_analysis = enkf_analysis(
-            latent,
-            latent_obs,
-            latent_observation,
+        return _warped_enkf_analysis(
+            self.warp,
+            obs_warp,
+            particles,
+            obs_particles,
+            observation,
             obs_noise,
             key=key,
-            perturbed_obs=latent_perturbed,
+            perturbed_obs=perturbed_obs,
             localization=localization,
-        )  # (J, N)
-        return jax.vmap(self.warp.transform)(latent_analysis)  # back to physical
+        )
 
 
 def rbig_conjugate_filter(
