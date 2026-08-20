@@ -555,7 +555,7 @@ requires-dist = [
     { name = "jax", specifier = ">=0.4.30" },
     { name = "jaxlib", specifier = ">=0.4.30" },
     { name = "jaxtyping" },
-    { name = "matfree", specifier = ">=0.5.5,<0.7" },
+    { name = "matfree", specifier = ">=0.6,<0.7" },
     { name = "numpyro", specifier = ">=0.13" },
     { name = "optimistix", specifier = ">=0.0.9" },
     { name = "paramax" },
@@ -1007,11 +1007,11 @@ wheels = [
 
 [[package]]
 name = "matfree"
-version = "0.5.5"
+version = "0.6.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/07/20/7daab1915d09f3618c089db9cf9d645c3da245eeb6236a7281b4759713fe/matfree-0.5.5.tar.gz", hash = "sha256:c478e0ddee7323ec0144fff558459d384a7b9283fd55fd56fc6876bd9701c55b", size = 55624, upload-time = "2025-12-02T09:01:34.401Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/64/a2/2951aa5cf49035d0b9e7568649bf6ce121696d806a678e3f67b654f5570d/matfree-0.6.1.tar.gz", hash = "sha256:9ac6cf0f88d04bb5a1ccb7c333088c3ce36bd4a949448c4ad5fa160bd0e38f90", size = 69563, upload-time = "2026-06-18T12:55:49.705Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/57/1d8c13471272eee62970c9e84e4dbf5dba1278d415b8c2923e4247289574/matfree-0.5.5-py3-none-any.whl", hash = "sha256:9ed7c079ec85c902df6d2c36664faa1b50069284a88ff16f8d55f1f4ba2393d0", size = 34657, upload-time = "2025-12-02T09:01:33.119Z" },
+    { url = "https://files.pythonhosted.org/packages/61/6f/8cd5afcf2630b61bb400178ac535e9ff2eae208e9166a2bb59d3aafcecfe/matfree-0.6.1-py3-none-any.whl", hash = "sha256:a27a0e38fd641f4a0e72a5f51a0fb0077538c01075223422ad51a1ce8a025aa5", size = 42248, upload-time = "2026-06-18T12:55:48.435Z" },
 ]
 
 [[package]]

@@ -53,22 +53,19 @@ def _require_gaussx():
         # gaussx is deliberately not a declared dependency (see the ImportError
         # below), so it is absent from the typecheck environment.
         from gaussx import enkf_analysis  # ty: ignore[unresolved-import]
-    # Catching Exception, not ImportError: in the dependency set users are most
-    # likely to hit, gaussx is *present* but raises AttributeError partway
-    # through its own import (it reaches for matfree's post-0.6 `sampler_signs`
-    # while gauss_flows pins the pre-0.6 `sampler_rademacher`). Narrowing to
+    # Catching Exception, not ImportError: gaussx can be *present* yet fail
+    # partway through its own import when its pins are unmet (seen in practice
+    # as an AttributeError from a matfree version mismatch). Narrowing to
     # ImportError would let that surface as an opaque traceback from a package
     # the caller never imported, which is what this helper exists to prevent.
     except Exception as exc:  # pragma: no cover - exercised by hand
         raise ImportError(
             "ConjugateTransformFilter needs the 'gaussx' package for its "
             "ensemble Kalman analysis step. gaussx is NOT a declared "
-            "dependency of gauss_flows -- it is not on PyPI, and its pins "
-            "conflict with this package's (interpax caps lineax at <=0.1.0 "
-            "while gaussx needs >=0.1.1; gaussx needs matfree>=0.6 while "
-            "gauss_flows._src._divergence still uses the pre-0.6 "
-            "`sampler_rademacher`). Install it deliberately into an "
-            "environment where those are resolved: "
+            "dependency of gauss_flows -- it is not published to PyPI, and "
+            "the optional `interp` extra's interpax caps lineax at <=0.1.0 "
+            "while gaussx needs >=0.1.1. It co-installs cleanly with core "
+            "gauss_flows: "
             "`pip install git+https://github.com/jejjohnson/gaussx.git`. "
             f"The underlying failure was {type(exc).__name__}: {exc}"
         ) from exc

@@ -12,11 +12,11 @@ from flowjax.bijections import Exp, Identity, Sigmoid, Stack
 from gauss_flows import ConjugateTransformFilter, rbig_conjugate_filter
 
 
-# `pytest.importorskip` only catches ImportError. gaussx currently fails to
-# import in this environment with an AttributeError instead: it needs
-# matfree>=0.6 (`sampler_signs`) while gauss_flows is pinned to the pre-0.6
-# `sampler_rademacher`. Skip on any import failure so the reason is reported
-# rather than collapsing the whole collection.
+# `pytest.importorskip` only catches ImportError. A gaussx whose own pins are
+# unmet can fail partway through its import with other exception types (seen
+# in practice as an AttributeError from a matfree version mismatch). Skip on
+# any import failure so the reason is reported rather than collapsing the
+# whole collection.
 try:
     import gaussx
     import lineax as lx
@@ -393,10 +393,9 @@ def test_rejects_an_obs_warp_that_does_not_match_the_observation_space():
 def test_import_failure_is_reported_as_an_actionable_dependency_error(monkeypatch):
     """Non-ImportError failures must not leak out of `_require_gaussx`.
 
-    In the dependency set users are most likely to hit, gaussx is installed but
-    raises AttributeError partway through its own import. Catching only
-    ImportError would surface that as an opaque traceback from a package the
-    caller never imported.
+    A gaussx whose own pins are unmet can raise AttributeError partway through
+    its own import. Catching only ImportError would surface that as an opaque
+    traceback from a package the caller never imported.
     """
     import builtins
 
