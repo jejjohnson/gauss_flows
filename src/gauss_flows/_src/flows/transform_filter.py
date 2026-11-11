@@ -66,9 +66,7 @@ def _require_gaussx():
             "The state-space transform filters need the 'gaussx' package for "
             "their filtering and ensemble analysis steps. gaussx is NOT a "
             "declared dependency of gauss_flows -- it is not published to "
-            "PyPI, and the optional `interp` extra's interpax caps lineax at "
-            "<=0.1.0 while gaussx needs >=0.1.1. It co-installs cleanly with "
-            "core gauss_flows: "
+            "PyPI. It co-installs cleanly with core gauss_flows: "
             "`pip install git+https://github.com/jejjohnson/gaussx.git`. "
             f"The underlying failure was {type(exc).__name__}: {exc}"
         ) from exc

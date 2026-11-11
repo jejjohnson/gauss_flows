@@ -52,9 +52,7 @@ gradient training. The result is an ordinary flow that can be used as-is or fine
 Three constructions that put a normalizing flow and a state-space model together.
 All take their state-space pieces from [`gaussx`](https://github.com/jejjohnson/gaussx),
 which is **not a declared dependency** of gauss_flows: gaussx is not published to
-PyPI, and the optional `interp` extra's interpax caps `lineax` at `<=0.1.0` while
-gaussx needs `>=0.1.1`. Core gauss_flows and gaussx co-install cleanly; install
-gaussx deliberately:
+PyPI. Core gauss_flows and gaussx co-install cleanly; install gaussx deliberately:
 
 ```bash
 pip install git+https://github.com/jejjohnson/gaussx.git
