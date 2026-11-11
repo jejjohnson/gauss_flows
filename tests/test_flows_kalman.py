@@ -852,7 +852,6 @@ def test_masking_preserves_a_bespoke_log_det_when_nothing_is_missing():
     the total from per-channel derivatives would quietly change the model and
     accumulate that gap over the time axis.
     """
-    pytest.importorskip("interpax")
     from gauss_flows import HistogramCDF
 
     data = jr.normal(jr.key(37), (2000, N_CHANNELS))
@@ -874,7 +873,6 @@ def test_masking_preserves_a_bespoke_log_det_when_nothing_is_missing():
 
 def test_masking_still_drops_unobserved_channels_for_a_bespoke_log_det():
     """Preserving the declared total must not stop the mask from masking."""
-    pytest.importorskip("interpax")
     from gauss_flows import HistogramCDF
 
     data = jr.normal(jr.key(39), (2000, N_CHANNELS))
@@ -898,7 +896,6 @@ def test_self_consistent_warp_satisfies_both_masking_properties():
     the masked density both matches the unmasked path when nothing is missing
     and ignores whatever sits in the unobserved slots.
     """
-    pytest.importorskip("interpax")
     from gauss_flows import HistogramCDF
 
     data = jr.normal(jr.key(42), (2000, N_CHANNELS))
@@ -1036,7 +1033,6 @@ def test_histogram_cdf_needs_a_probit_step_to_be_a_valid_warp():
     density is not normalised. Composing with `InverseGaussCDF` supplies the
     probit step `MixtureGaussianCDF` already has built in.
     """
-    pytest.importorskip("interpax")
     from gauss_flows import HistogramCDF, InverseGaussCDF
 
     data = jr.normal(jr.key(48), (2000, N_CHANNELS))

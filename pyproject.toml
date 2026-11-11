@@ -34,10 +34,8 @@ dependencies = [
     "scikit-learn>=1.3",
     "diffrax>=0.7.2,<0.8",
     "matfree>=0.6,<0.7",
+    "functax[jax] @ git+https://github.com/jejjohnson/functax.git@v0.0.6",
 ]
-
-[project.optional-dependencies]
-interp = ["interpax>=0.3.13"]
 
 [project.urls]
 Repository = "https://github.com/jejjohnson/gauss_flows"
@@ -50,7 +48,6 @@ dev = [
     "pre-commit>=4.5.1",
     "scipy>=1.13",
     "optax>=0.1",
-    "interpax>=0.3.13",
 ]
 lint = [
     "ruff>=0.15.10",
@@ -72,6 +69,10 @@ docs = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+# functax is pinned by a git tag (PEP 508 direct reference)
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/gauss_flows"]

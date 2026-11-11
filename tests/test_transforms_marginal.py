@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import equinox as eqx
-import interpax
 import jax
 import jax.numpy as jnp
 import jax.random as jr
 import jax.scipy.stats as jstats
+import pytest
 
 from gauss_flows import (
     HistogramCDF,
@@ -16,6 +16,7 @@ from gauss_flows import (
     MixtureLogisticCDF,
     RQSplineMarginal,
 )
+from gauss_flows._src.transforms.bijections.elementwise.histogram import _interpolants
 
 
 def test_mixture_gaussian_cdf_shape(key):
@@ -172,24 +173,20 @@ def test_histogram_cdf_monotonic_roundtrip(key):
     assert jnp.allclose(log_det_f + log_det_i, 0.0, atol=1e-3)
 
 
-def test_histogram_cdf_grad_through_knots(key):
+@pytest.mark.parametrize("method", ["linear", "monotonic"])
+def test_histogram_cdf_grad_through_knots(key, method):
     """``jax.grad`` flows through the fitted CDF knot values (``cdf_edges``).
     Enables future trainable-CDF variants (e.g. fine-tuning from a histogram
     initialisation)."""
     shape = (2,)
     data = jr.normal(key, (1000, shape[0]))
-    fitted = HistogramCDF(n_bins=16, shape=shape).fit(data)
+    fitted = HistogramCDF(n_bins=16, shape=shape, method=method).fit(data)
     x = jnp.array([0.0, 0.1])
 
     def loss(cdf_nodes):
         # Re-build a fitted HistogramCDF with perturbed CDF knots while
-        # keeping the rest of the structure fixed.
-        method = fitted.method
-
-        def _make_fwd(e, c):
-            return interpax.Interpolator1D(e, c, method=method, extrap=(0.0, 1.0))
-
-        new_fwd = eqx.filter_vmap(_make_fwd)(fitted.bin_edges, cdf_nodes)
+        # keeping the rest of the structure fixed; functax's fit is traced.
+        new_fwd, _ = _interpolants(fitted.method, fitted.bin_edges, cdf_nodes)
         perturbed = eqx.tree_at(
             lambda t: (t.cdf_edges, t.fwd_interp), fitted, (cdf_nodes, new_fwd)
         )

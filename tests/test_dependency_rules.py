@@ -83,9 +83,8 @@ ALLOWED: dict[str, str] = {
 #: distribution -> reason
 UNDECLARED_OK: dict[str, str] = {
     "gaussx": (
-        "gaussx is not on PyPI, and gauss_flows' [interp] extra (interpax)"
-        " caps lineax below what gaussx needs; a [gaussx] extra forks the"
-        " lock and moves the base install to a jax its numpyro cannot import"
+        "gaussx is not on PyPI, and a [gaussx] extra forks the lock and"
+        " moves the base install to a jax its numpyro cannot import"
     ),
 }
 

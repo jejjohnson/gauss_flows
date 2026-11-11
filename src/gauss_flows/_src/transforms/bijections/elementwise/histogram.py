@@ -2,18 +2,90 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 from flowjax.bijections import AbstractBijection
+from functax.geometry import Axis
+from functax.interp import Interpolant, Linear, Pchip, Policies, SeriesInterpolant
 from jax import Array
 from jaxtyping import ArrayLike
 
 
-if TYPE_CHECKING:
-    import interpax
+# The scheme is read on its own end cubic (or line) outside the knots, and the
+# outside values are then written explicitly, as interpax's ``extrap=(lo, hi)``
+# did: "clamp" would also work for the values but halves the autodiff
+# derivative at the end knots (the gradient of ``clip`` at its bound).
+_POLICIES = Policies(outside="extrapolate")
+
+
+def _strictly_increasing(knots: Array) -> Array:
+    """Knots made strictly increasing by lowering repeats one ulp at a time.
+
+    The float32 CDF cannot resolve the ``1e-6`` smoothing increments of empty
+    bins near 1, so it repeats values there; functax's `Axis` needs strictly
+    increasing knots. Scanning from the right, each knot becomes
+    ``min(c_k, nextafter(k_{k+1}, −∞))``: strictly increasing runs are left
+    unchanged, the last knot keeps its value, and each repeat moves down by
+    the fewest ulps that separate it from its right neighbour.
+    """
+
+    def step(right, knot):
+        lowered = jnp.minimum(knot, jnp.nextafter(right, -jnp.inf))
+        return lowered, lowered
+
+    # knots: (n_knots,) -> lowered: (n_knots - 1,); nextafter has no
+    # derivative, so the shift is a constant and gradients pass straight through
+    fixed = jax.lax.stop_gradient(knots)
+    _, lowered = jax.lax.scan(step, fixed[-1], fixed[:-1], reverse=True)
+    shift = jnp.concatenate([lowered, fixed[-1:]]) - fixed
+    return knots + shift
+
+
+def _interpolants(
+    method: str, bin_edges: Array, cdf_edges: Array
+) -> tuple[Interpolant | SeriesInterpolant, Interpolant | SeriesInterpolant]:
+    """The forward CDF F and its inverse, one functax interpolant per dim.
+
+    Args:
+        method: ``"linear"`` (functax `Linear`) or ``"monotonic"`` (`Pchip`).
+        bin_edges: The knots x_k of every dim, ``(n_dims, n_bins + 1)``.
+        cdf_edges: F(x_k), ``(n_dims, n_bins + 1)``.
+
+    Returns:
+        ``(fwd, inv)``, each one pytree with leading axis ``n_dims``: F on the
+        edges, and F⁻¹ on the CDF values (made strictly increasing).
+    """
+    scheme = Linear() if method == "linear" else Pchip()
+
+    def _make(knots, values):
+        return scheme.fit(Axis(knots), values, policies=_POLICIES)
+
+    def _make_inv(cdf_i, edges_i):
+        return _make(_strictly_increasing(cdf_i), edges_i)
+
+    fwd = eqx.filter_vmap(_make)(bin_edges, cdf_edges)
+    inv = eqx.filter_vmap(_make_inv)(cdf_edges, bin_edges)
+    return fwd, inv
+
+
+def _read(interpolant: Interpolant | SeriesInterpolant, x: Array) -> Array:
+    """One interpolant read at one scalar target."""
+    # x: () -> targets: (1, 1) -> value: (1,) -> ()
+    return interpolant(x[None, None])[0]
+
+
+def _slope(interpolant: Interpolant | SeriesInterpolant, x: Array) -> Array:
+    """dF/dx at one scalar target, by autodiff of the read-out in the target.
+
+    functax 0.0.6 has a derivative read-out for `Linear` but none for the
+    1-D series schemes (`Pchip`); differentiating the read-out gives the
+    analytic derivative of either piecewise polynomial on the cell that
+    holds ``x`` (the right cell at a knot), as interpax's ``dx=1`` did.
+    """
+    return jax.grad(lambda t: _read(interpolant, t))(x)
 
 
 class HistogramCDF(AbstractBijection):
@@ -24,17 +96,17 @@ class HistogramCDF(AbstractBijection):
     range inputs are clamped to ``{0, 1}`` with ``log_det = −∞`` (signals
     "outside the support of the fitted CDF").
 
-    The CDF is built from an equal-width histogram and routed through an
-    `interpax.Interpolator1D` per dimension. Two interpolation
-    strategies are supported:
+    The CDF is built from an equal-width histogram and routed through a
+    functax 1-D interpolant per dimension (``functax.interp``). Two
+    interpolation strategies are supported:
 
-    - ``method="linear"`` (default): piecewise-linear CDF. Bit-identical to
-      the previous ``jnp.searchsorted`` implementation. Density is the
-      piecewise-constant bin PDF; log-det is piecewise-constant in ``x``.
-    - ``method="monotonic"``: Fritsch-Carlson monotone cubic Hermite (PCHIP)
-      interpolant through the same CDF breakpoints. Gives a smooth CDF and
-      a smooth (continuous, piecewise-cubic) density via the analytic
-      derivative. The inverse is a second monotonic-cubic interpolator
+    - ``method="linear"`` (default): piecewise-linear CDF (functax
+      `Linear`). Density is the piecewise-constant bin PDF; log-det is
+      piecewise-constant in ``x``.
+    - ``method="monotonic"``: Fritsch-Carlson monotone cubic Hermite (PCHIP,
+      functax `Pchip`) interpolant through the same CDF breakpoints. Gives a
+      smooth CDF and a smooth (continuous, piecewise-cubic) density via the
+      analytic derivative. The inverse is a second monotonic-cubic interpolator
       on swapped axes, so roundtrip is approximate (~1e-5) rather than
       exact — use ``"linear"`` if exact roundtrip matters.
 
@@ -85,8 +157,8 @@ class HistogramCDF(AbstractBijection):
     bin_edges: Array | None
     bin_pdf: Array | None
     cdf_edges: Array | None
-    fwd_interp: interpax.Interpolator1D | None
-    inv_interp: interpax.Interpolator1D | None
+    fwd_interp: Interpolant | SeriesInterpolant | None
+    inv_interp: Interpolant | SeriesInterpolant | None
 
     def __init__(
         self,
@@ -96,8 +168,8 @@ class HistogramCDF(AbstractBijection):
         bin_edges: Array | None = None,
         bin_pdf: Array | None = None,
         cdf_edges: Array | None = None,
-        fwd_interp: interpax.Interpolator1D | None = None,
-        inv_interp: interpax.Interpolator1D | None = None,
+        fwd_interp: Interpolant | SeriesInterpolant | None = None,
+        inv_interp: Interpolant | SeriesInterpolant | None = None,
     ):
         if len(shape) != 1:
             raise ValueError("HistogramCDF only supports 1D inputs.")
@@ -124,18 +196,7 @@ class HistogramCDF(AbstractBijection):
             ``bin_pdf``, ``cdf_edges``, and per-dim forward/inverse
             interpolators populated. Idempotent: refitting with the same
             data yields the same fitted parameters.
-
-        Raises:
-            ImportError: If ``interpax`` is not installed. Install it with
-                ``pip install gauss-flows[interp]``.
         """
-        try:
-            import interpax
-        except ModuleNotFoundError as e:
-            raise ModuleNotFoundError(
-                "HistogramCDF.fit() requires interpax. "
-                "Install it with: pip install gauss-flows[interp]"
-            ) from e
         # values: (n_samples, n_dims)
         values = jnp.asarray(data)
         if values.ndim != 2 or values.shape[1] != self.shape[0]:
@@ -162,7 +223,8 @@ class HistogramCDF(AbstractBijection):
             return counts
 
         # counts: (n_dims, n_bins). Smooth by 1e-6 to avoid log(0) and to
-        # keep cdf_edges strictly monotone (required by interpax).
+        # keep cdf_edges monotone; the float32 tail can still repeat values,
+        # which `_strictly_increasing` separates for the inverse's knots.
         counts = jax.vmap(_hist)(values.T, bin_edges) + 1e-6
         totals = jnp.sum(counts, axis=1, keepdims=True)  # (n_dims, 1)
         widths = jnp.diff(bin_edges, axis=1)  # (n_dims, n_bins)
@@ -174,24 +236,9 @@ class HistogramCDF(AbstractBijection):
         )
         cdf_edges = jnp.minimum(cdf_edges, 1.0)
 
-        # Per-dim interpolators batched via eqx.filter_vmap → one PyTree with
-        # leading axis ``n_dims`` per leaf. ``extrap=(lo, hi)`` clamps queries
-        # outside the fitted range to the boundary values.
-        method = self.method
-
-        def _make_fwd(edges_i, cdf_i):
-            return interpax.Interpolator1D(
-                edges_i, cdf_i, method=method, extrap=(0.0, 1.0)
-            )
-
-        def _make_inv(cdf_i, edges_i):
-            # extrap fills per-dim with that dim's own left/right edge.
-            return interpax.Interpolator1D(
-                cdf_i, edges_i, method=method, extrap=(edges_i[0], edges_i[-1])
-            )
-
-        fwd_interp = eqx.filter_vmap(_make_fwd)(bin_edges, cdf_edges)
-        inv_interp = eqx.filter_vmap(_make_inv)(cdf_edges, bin_edges)
+        # Per-dim interpolants batched via eqx.filter_vmap → one PyTree with
+        # leading axis ``n_dims`` per leaf.
+        fwd_interp, inv_interp = _interpolants(self.method, bin_edges, cdf_edges)
 
         return HistogramCDF(
             self.n_bins,
@@ -221,16 +268,17 @@ class HistogramCDF(AbstractBijection):
         edges = self.bin_edges  # type: ignore[assignment]
 
         def _one(fwd, x_i, edges_i):
-            # fwd: per-dim Interpolator1D; x_i, edges_i: scalar / (n_bins+1,)
-            y_i = fwd(x_i)
+            # fwd: per-dim interpolant; x_i, edges_i: scalar / (n_bins+1,)
+            y_i = _read(fwd, x_i)
             # Analytic derivative: for "linear" this is the piecewise-constant
             # bin PDF; for "monotonic" it is the smooth Hermite derivative.
-            density = fwd(x_i, dx=1)
+            density = _slope(fwd, x_i)
             inside = (x_i >= edges_i[0]) & (x_i <= edges_i[-1])
-            # Clamp y to the extrap boundaries we passed to interpax. This is
-            # redundant inside the range but guards against monotonic-cubic
-            # overshoot at the extrapolation seam (shouldn't happen with
-            # extrap=(0, 1) but cheap).
+            # Outside the fitted range F is 0 below and 1 above.
+            y_i = jnp.where(x_i < edges_i[0], 0.0, y_i)
+            y_i = jnp.where(x_i > edges_i[-1], 1.0, y_i)
+            # Redundant inside the range, but guards against monotonic-cubic
+            # overshoot (PCHIP does not overshoot; cheap).
             y_i = jnp.clip(y_i, 0.0, 1.0)
             log_det_i = jnp.where(
                 inside, jnp.log(jnp.clip(density, min=1e-38)), -jnp.inf
@@ -260,8 +308,11 @@ class HistogramCDF(AbstractBijection):
             # map to edges[0] / edges[-1] and carry a finite log_det),
             # consistent with forward's treatment of x == edges[0/-1].
             y_clipped = jnp.clip(y_i, 0.0, 1.0)
-            x_i = inv(y_clipped)
-            density = fwd(x_i, dx=1)
+            x_i = _read(inv, y_clipped)
+            # Above the last CDF knot (float32 can leave it just below 1), F⁻¹
+            # is the right edge.
+            x_i = jnp.where(y_clipped > inv.source.values[-1], edges_i[-1], x_i)
+            density = _slope(fwd, x_i)
             outside = (y_i < 0.0) | (y_i > 1.0)
             x_i = jnp.where(y_i < 0.0, edges_i[0], x_i)
             x_i = jnp.where(y_i > 1.0, edges_i[-1], x_i)
